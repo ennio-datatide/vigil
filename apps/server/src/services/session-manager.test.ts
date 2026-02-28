@@ -635,6 +635,79 @@ describe('SessionManager', () => {
     });
   });
 
+  describe('PreToolUse AskUserQuestion detection', () => {
+    it('should mark session as needs_input when PreToolUse fires for AskUserQuestion', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-ask', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-ask',
+        eventType: 'PreToolUse',
+        toolName: 'AskUserQuestion',
+        payload: {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'AskUserQuestion',
+          tool_input: {
+            questions: [
+              {
+                question: 'Which approach do you prefer?',
+                options: [
+                  { label: 'Option A', description: 'First approach' },
+                  { label: 'Option B', description: 'Second approach' },
+                ],
+              },
+            ],
+          },
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-ask'))
+        .get();
+      expect(session?.status).toBe('needs_input');
+
+      expect(notificationHandler).toHaveBeenCalledWith({
+        sessionId: 'sess-ask',
+        type: 'needs_input',
+        message: 'Which approach do you prefer?',
+      });
+    });
+
+    it('should not change status for PreToolUse with non-AskUserQuestion tools', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-bash', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-bash',
+        eventType: 'PreToolUse',
+        toolName: 'Bash',
+        payload: {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm test' },
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-bash'))
+        .get();
+      expect(session?.status).toBe('running');
+      expect(notificationHandler).not.toHaveBeenCalled();
+    });
+  });
+
   describe('start and stop lifecycle', () => {
     it('should start listening for events on start()', () => {
       manager.start();

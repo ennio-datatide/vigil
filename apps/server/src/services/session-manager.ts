@@ -104,13 +104,25 @@ export class SessionManager {
   }
 
   private handleHookEvent(data: BusEvents['hook_event']): void {
-    const { sessionId, eventType, payload } = data;
+    const { sessionId, eventType, toolName, payload } = data;
 
     if (eventType === 'Stop') {
       this.handleStopEvent(sessionId, payload);
     } else if (eventType === 'Notification') {
       this.handleNotificationEvent(sessionId, payload);
+    } else if (eventType === 'PreToolUse' && toolName === 'AskUserQuestion') {
+      this.handleAskUserQuestion(sessionId, payload);
     }
+  }
+
+  private handleAskUserQuestion(sessionId: string, payload: Record<string, unknown>): void {
+    // Extract the first question text from AskUserQuestion tool_input
+    const toolInput = payload.tool_input as Record<string, unknown> | undefined;
+    const questions = toolInput?.questions as Array<Record<string, unknown>> | undefined;
+    const firstQuestion = (questions?.[0]?.question as string) ?? 'Claude needs your input';
+
+    updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' });
+    this.emitNotification(sessionId, 'needs_input', firstQuestion);
   }
 
   private handleStopEvent(sessionId: string, payload: Record<string, unknown>): void {
