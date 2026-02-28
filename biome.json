@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!.next", "!.turbo", "!package-lock.json"]
+    "includes": ["**", "!dist", "!.next", "!.turbo", "!package-lock.json", "!**/next-env.d.ts"]
   },
   "assist": {
     "enabled": true,
