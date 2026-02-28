@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { WORKTREE_RETENTION_HOURS } from '@praefectus/shared';
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Db } from '../db/client.js';
 import * as schema from '../db/schema.js';
 import { CleanupService } from './cleanup.js';
-import type { Db } from '../db/client.js';
-import { WORKTREE_RETENTION_HOURS } from '@praefectus/shared';
+import type { WorktreeManager } from './worktree-manager.js';
 
 function createTestDb() {
   const sqlite = new Database(':memory:');
@@ -67,18 +68,22 @@ const OLD_TIMESTAMP = Date.now() - (WORKTREE_RETENTION_HOURS + 1) * 60 * 60 * 10
 const RECENT_TIMESTAMP = Date.now() - 1 * 60 * 60 * 1000; // 1 hour ago
 
 function insertSession(db: Db, overrides: Partial<typeof schema.sessions.$inferInsert> = {}) {
-  return db.insert(schema.sessions).values({
-    id: 'sess-1',
-    projectPath: '/tmp/project',
-    prompt: 'test prompt',
-    status: 'completed',
-    agentType: 'claude',
-    tmuxSession: 'pf-sess-1',
-    startedAt: OLD_TIMESTAMP - 1000,
-    endedAt: OLD_TIMESTAMP,
-    worktreePath: '/tmp/worktrees/sess-1',
-    ...overrides,
-  }).returning().get();
+  return db
+    .insert(schema.sessions)
+    .values({
+      id: 'sess-1',
+      projectPath: '/tmp/project',
+      prompt: 'test prompt',
+      status: 'completed',
+      agentType: 'claude',
+      tmuxSession: 'pf-sess-1',
+      startedAt: OLD_TIMESTAMP - 1000,
+      endedAt: OLD_TIMESTAMP,
+      worktreePath: '/tmp/worktrees/sess-1',
+      ...overrides,
+    })
+    .returning()
+    .get();
 }
 
 function createMockWorktreeManager(hasChanges = false) {
@@ -114,7 +119,7 @@ describe('CleanupService', () => {
     });
 
     const mockWt = createMockWorktreeManager(false);
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -124,7 +129,11 @@ describe('CleanupService', () => {
     expect(mockWt.remove).toHaveBeenCalledWith('/tmp/worktrees/sess-old');
 
     // worktreePath should be nulled out
-    const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-old')).get();
+    const session = db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, 'sess-old'))
+      .get();
     expect(session?.worktreePath).toBeNull();
   });
 
@@ -137,7 +146,7 @@ describe('CleanupService', () => {
     });
 
     const mockWt = createMockWorktreeManager(true); // has changes
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -146,7 +155,11 @@ describe('CleanupService', () => {
     expect(mockWt.remove).not.toHaveBeenCalled();
 
     // worktreePath should remain
-    const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-dirty')).get();
+    const session = db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, 'sess-dirty'))
+      .get();
     expect(session?.worktreePath).toBe('/tmp/worktrees/sess-dirty');
   });
 
@@ -159,7 +172,7 @@ describe('CleanupService', () => {
     });
 
     const mockWt = createMockWorktreeManager(false);
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -177,7 +190,7 @@ describe('CleanupService', () => {
     });
 
     const mockWt = createMockWorktreeManager(false);
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -195,7 +208,7 @@ describe('CleanupService', () => {
 
     const mockWt = createMockWorktreeManager(false);
     mockWt.hasUnmergedChanges.mockRejectedValue(new Error('filesystem error'));
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -230,7 +243,7 @@ describe('CleanupService', () => {
     mockWt.hasUnmergedChanges.mockImplementation(async (path: string) => {
       return path.includes('dirty');
     });
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 
@@ -240,7 +253,7 @@ describe('CleanupService', () => {
 
   it('should return zeros when no eligible sessions exist', async () => {
     const mockWt = createMockWorktreeManager(false);
-    const cleanup = new CleanupService(db, mockWt as any);
+    const cleanup = new CleanupService(db, mockWt as unknown as WorktreeManager);
 
     const result = await cleanup.cleanupWorktrees();
 

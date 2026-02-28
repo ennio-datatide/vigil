@@ -1,7 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readlinkSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { SkillManager } from './skill-manager.js';
 
 describe('SkillManager', () => {
@@ -23,10 +30,10 @@ describe('SkillManager', () => {
   it('should list available skills', () => {
     const skills = manager.listSkills();
     expect(skills).toHaveLength(2);
-    expect(skills.map(s => s.name)).toContain('implement');
-    expect(skills.map(s => s.name)).toContain('review');
+    expect(skills.map((s) => s.name)).toContain('implement');
+    expect(skills.map((s) => s.name)).toContain('review');
     // Should NOT include .txt files
-    expect(skills.map(s => s.name)).not.toContain('not-a-skill');
+    expect(skills.map((s) => s.name)).not.toContain('not-a-skill');
   });
 
   it('should install skills into a worktree', async () => {

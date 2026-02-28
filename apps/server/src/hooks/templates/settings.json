@@ -1,10 +1,20 @@
 {
   "hooks": {
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }],
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }
+    ],
     "Stop": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }],
-    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }],
-    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }]
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "bash __HOOKS_DIR__/emit-event.sh" }] }
+    ]
   }
 }

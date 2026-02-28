@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
 import { eq, notInArray } from 'drizzle-orm';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../app.js';
 import { sessions } from '../db/schema.js';
 import { EventBus } from '../services/event-bus.js';
@@ -8,7 +8,7 @@ describe('dashboard WebSocket plugin', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-dashboard-ws-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-dashboard-ws-${Date.now()}` });
   });
 
   afterAll(async () => {
@@ -42,15 +42,18 @@ describe('dashboard WebSocket plugin', () => {
 
     it('should return active sessions excluding completed and cancelled', () => {
       // Seed sessions with various statuses
-      app.db.insert(sessions).values([
-        { id: 'sess-queued', projectPath: '/tmp/p', prompt: 'test', status: 'queued' },
-        { id: 'sess-running', projectPath: '/tmp/p', prompt: 'test', status: 'running' },
-        { id: 'sess-needs-input', projectPath: '/tmp/p', prompt: 'test', status: 'needs_input' },
-        { id: 'sess-completed', projectPath: '/tmp/p', prompt: 'test', status: 'completed' },
-        { id: 'sess-cancelled', projectPath: '/tmp/p', prompt: 'test', status: 'cancelled' },
-        { id: 'sess-failed', projectPath: '/tmp/p', prompt: 'test', status: 'failed' },
-        { id: 'sess-auth-req', projectPath: '/tmp/p', prompt: 'test', status: 'auth_required' },
-      ]).run();
+      app.db
+        .insert(sessions)
+        .values([
+          { id: 'sess-queued', projectPath: '/tmp/p', prompt: 'test', status: 'queued' },
+          { id: 'sess-running', projectPath: '/tmp/p', prompt: 'test', status: 'running' },
+          { id: 'sess-needs-input', projectPath: '/tmp/p', prompt: 'test', status: 'needs_input' },
+          { id: 'sess-completed', projectPath: '/tmp/p', prompt: 'test', status: 'completed' },
+          { id: 'sess-cancelled', projectPath: '/tmp/p', prompt: 'test', status: 'cancelled' },
+          { id: 'sess-failed', projectPath: '/tmp/p', prompt: 'test', status: 'failed' },
+          { id: 'sess-auth-req', projectPath: '/tmp/p', prompt: 'test', status: 'auth_required' },
+        ])
+        .run();
 
       // Use the same query logic as the plugin
       const activeSessions = app.db
@@ -83,10 +86,13 @@ describe('dashboard WebSocket plugin', () => {
     });
 
     it('should return empty array when only completed/cancelled sessions exist', () => {
-      app.db.insert(sessions).values([
-        { id: 'sess-c1', projectPath: '/tmp/p', prompt: 'test', status: 'completed' },
-        { id: 'sess-c2', projectPath: '/tmp/p', prompt: 'test', status: 'cancelled' },
-      ]).run();
+      app.db
+        .insert(sessions)
+        .values([
+          { id: 'sess-c1', projectPath: '/tmp/p', prompt: 'test', status: 'completed' },
+          { id: 'sess-c2', projectPath: '/tmp/p', prompt: 'test', status: 'cancelled' },
+        ])
+        .run();
 
       const activeSessions = app.db
         .select()
@@ -105,12 +111,15 @@ describe('dashboard WebSocket plugin', () => {
 
     it('should look up full session on session_update event', () => {
       // Insert a session
-      app.db.insert(sessions).values({
-        id: 'sess-update-test',
-        projectPath: '/tmp/p',
-        prompt: 'testing update',
-        status: 'running',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'sess-update-test',
+          projectPath: '/tmp/p',
+          prompt: 'testing update',
+          status: 'running',
+        })
+        .run();
 
       // Simulate what the handler does - look up full session
       const session = app.db
@@ -120,17 +129,13 @@ describe('dashboard WebSocket plugin', () => {
         .get();
 
       expect(session).toBeDefined();
-      expect(session!.id).toBe('sess-update-test');
-      expect(session!.status).toBe('running');
-      expect(session!.prompt).toBe('testing update');
+      expect(session?.id).toBe('sess-update-test');
+      expect(session?.status).toBe('running');
+      expect(session?.prompt).toBe('testing update');
     });
 
     it('should handle session_update for nonexistent session gracefully', () => {
-      const session = app.db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.id, 'nonexistent'))
-        .get();
+      const session = app.db.select().from(sessions).where(eq(sessions.id, 'nonexistent')).get();
 
       expect(session).toBeUndefined();
     });
@@ -167,12 +172,15 @@ describe('dashboard WebSocket plugin', () => {
   describe('message serialization', () => {
     it('should produce valid state_sync JSON', () => {
       app.db.delete(sessions).run();
-      app.db.insert(sessions).values({
-        id: 'sess-json',
-        projectPath: '/tmp/p',
-        prompt: 'test json',
-        status: 'running',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'sess-json',
+          projectPath: '/tmp/p',
+          prompt: 'test json',
+          status: 'running',
+        })
+        .run();
 
       const activeSessions = app.db
         .select()

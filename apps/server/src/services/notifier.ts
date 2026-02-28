@@ -20,10 +20,14 @@ export class TelegramNotifier {
   async send(params: NotificationParams): Promise<void> {
     if (!this.config) return;
 
-    const emoji = params.type === 'needs_input' ? '\u{1F514}' :
-                  params.type === 'error' ? '\u{1F6A8}' :
-                  params.type === 'auth_required' ? '\u{26A0}\u{FE0F}' :
-                  '\u{2705}';
+    const emoji =
+      params.type === 'needs_input'
+        ? '\u{1F514}'
+        : params.type === 'error'
+          ? '\u{1F6A8}'
+          : params.type === 'auth_required'
+            ? '\u{26A0}\u{FE0F}'
+            : '\u{2705}';
 
     const text = [
       `${emoji} Session ${params.type.replace('_', ' ')}`,

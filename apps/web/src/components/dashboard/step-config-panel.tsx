@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { PipelineStep } from '@/lib/types';
 
 interface StepConfigPanelProps {
@@ -24,7 +24,7 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
     setAgent(step.agent);
     setPrompt(step.prompt);
     setConfirmDelete(false);
-  }, [step.id, step.label, step.skill, step.agent, step.prompt]);
+  }, [step.label, step.skill, step.agent, step.prompt]);
 
   const handleUpdate = () => {
     onUpdate({ ...step, label, skill, agent, prompt });
@@ -34,7 +34,13 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
     <div className="glass-strong h-full w-80 shrink-0 border-l border-border-subtle p-4 overflow-y-auto">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-muted">Step Config</h3>
-        <button onClick={onClose} className="rounded-lg p-1 text-text-muted hover:bg-surface-hover transition-colors text-lg leading-none">&times;</button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1 text-text-muted hover:bg-surface-hover transition-colors text-lg leading-none"
+        >
+          &times;
+        </button>
       </div>
 
       <div className="space-y-4">
@@ -68,7 +74,10 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
                 type="radio"
                 name="agent"
                 checked={agent === 'claude'}
-                onChange={() => { setAgent('claude'); onUpdate({ ...step, label, skill, agent: 'claude', prompt }); }}
+                onChange={() => {
+                  setAgent('claude');
+                  onUpdate({ ...step, label, skill, agent: 'claude', prompt });
+                }}
                 className="accent-accent"
               />
               <span className="text-sm text-text">Claude</span>
@@ -76,7 +85,9 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
             <label className="flex items-center gap-2 cursor-not-allowed opacity-50">
               <input type="radio" name="agent" disabled />
               <span className="text-sm text-text-muted">Codex</span>
-              <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-text-muted">Coming Soon</span>
+              <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-text-muted">
+                Coming Soon
+              </span>
             </label>
           </div>
         </div>
@@ -96,12 +107,14 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
           {confirmDelete ? (
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => onDelete(step.id)}
                 className="btn-press flex-1 rounded-lg bg-status-error/10 text-status-error hover:bg-status-error/20 px-3 py-2 text-sm"
               >
                 Confirm Delete
               </button>
               <button
+                type="button"
                 onClick={() => setConfirmDelete(false)}
                 className="rounded-md border border-border px-3 py-2 text-sm text-text-muted"
               >
@@ -110,6 +123,7 @@ export function StepConfigPanel({ step, onUpdate, onDelete, onClose }: StepConfi
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => setConfirmDelete(true)}
               className="btn-press w-full rounded-lg bg-status-error/10 text-status-error hover:bg-status-error/20 px-3 py-2 text-sm"
             >

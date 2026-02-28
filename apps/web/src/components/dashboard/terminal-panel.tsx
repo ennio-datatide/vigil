@@ -1,10 +1,10 @@
 'use client';
 
+import { AnimatePresence, motion } from 'framer-motion';
 import { useRef, useState } from 'react';
-import { useTerminal } from '@/lib/hooks/use-terminal';
 import { useRestartSession } from '@/lib/api';
+import { useTerminal } from '@/lib/hooks/use-terminal';
 import { useToast } from '@/lib/stores/toast-store';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import '@xterm/xterm/css/xterm.css';
 
@@ -51,6 +51,7 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
         </span>
         {connected && !ptyAlive && (
           <button
+            type="button"
             onClick={handleRestart}
             disabled={restartMutation.isPending}
             className="btn-press rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
@@ -71,15 +72,23 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
         {/* Mobile keyboard toggle */}
         {ptyAlive && (
           <button
+            type="button"
             onClick={() => setInputOpen((o) => !o)}
             className={`absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full shadow-lg md:hidden transition-colors ${
-              inputOpen
-                ? 'bg-accent text-white'
-                : 'glass text-text-muted'
+              inputOpen ? 'bg-accent text-white' : 'glass text-text-muted'
             }`}
             aria-label={inputOpen ? 'Hide keyboard' : 'Show keyboard'}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               {inputOpen ? (
                 <>
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -116,7 +125,10 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
           >
             <div className="glass-strong border-t border-border-subtle p-3">
               <form
-                onSubmit={(e) => { e.preventDefault(); handleMobileSend(); }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleMobileSend();
+                }}
                 className="flex gap-2"
               >
                 <input
@@ -124,7 +136,6 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
                   value={mobileInput}
                   onChange={(e) => setMobileInput(e.target.value)}
                   placeholder="Type command..."
-                  autoFocus
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"

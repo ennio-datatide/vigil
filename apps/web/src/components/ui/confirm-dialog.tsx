@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -43,12 +43,14 @@ export function ConfirmDialog({
             <p className="mt-2 text-sm text-text-muted leading-relaxed">{message}</p>
             <div className="mt-5 flex justify-end gap-3">
               <button
+                type="button"
                 onClick={onCancel}
                 className="btn-press rounded-lg px-4 py-2 text-sm text-text-muted hover:bg-surface-hover transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={onConfirm}
                 className={`btn-press rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
                   variant === 'danger'

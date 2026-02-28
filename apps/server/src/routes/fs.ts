@@ -1,7 +1,7 @@
-import type { FastifyPluginAsync } from 'fastify';
-import { readdirSync, statSync } from 'node:fs';
-import { resolve, dirname, basename } from 'node:path';
+import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { basename, dirname, resolve } from 'node:path';
+import type { FastifyPluginAsync } from 'fastify';
 
 const fsRoute: FastifyPluginAsync = async (app) => {
   // List directories for path autocomplete
@@ -9,9 +9,7 @@ const fsRoute: FastifyPluginAsync = async (app) => {
     const prefix = request.query.prefix?.trim() || '';
 
     // If empty or just ~, list home directory children
-    const expanded = prefix.startsWith('~')
-      ? prefix.replace('~', homedir())
-      : prefix;
+    const expanded = prefix.startsWith('~') ? prefix.replace('~', homedir()) : prefix;
 
     if (!expanded || expanded === '/') {
       return { dirs: listDirs('/', 20) };

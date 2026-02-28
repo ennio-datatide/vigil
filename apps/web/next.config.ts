@@ -3,7 +3,12 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
-  transpilePackages: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-webgl', '@xterm/addon-attach'],
+  transpilePackages: [
+    '@xterm/xterm',
+    '@xterm/addon-fit',
+    '@xterm/addon-webgl',
+    '@xterm/addon-attach',
+  ],
   async rewrites() {
     return [
       { source: '/api/:path*', destination: 'http://localhost:8000/api/:path*' },

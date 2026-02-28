@@ -1,14 +1,17 @@
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 
 export class WorktreeManager {
   constructor(private worktreeBase: string) {}
 
-  async create(repoPath: string, sessionId: string): Promise<{ worktreePath: string; branch: string }> {
+  async create(
+    repoPath: string,
+    sessionId: string,
+  ): Promise<{ worktreePath: string; branch: string }> {
     const branch = `praefectus/${sessionId}`;
     const worktreePath = join(this.worktreeBase, sessionId);
 
@@ -20,7 +23,9 @@ export class WorktreeManager {
   async remove(worktreePath: string): Promise<void> {
     if (!existsSync(worktreePath)) return;
     try {
-      const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], { cwd: worktreePath });
+      const { stdout } = await exec('git', ['rev-parse', '--git-common-dir'], {
+        cwd: worktreePath,
+      });
       const gitDir = stdout.trim();
       const repoPath = join(gitDir, '..');
       await exec('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
@@ -32,10 +37,11 @@ export class WorktreeManager {
   async removeAll(repoPath: string): Promise<void> {
     try {
       const { stdout } = await exec('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
-      const worktrees = stdout.split('\n')
-        .filter(line => line.startsWith('worktree '))
-        .map(line => line.replace('worktree ', ''))
-        .filter(path => path.includes(this.worktreeBase));
+      const worktrees = stdout
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .map((line) => line.replace('worktree ', ''))
+        .filter((path) => path.includes(this.worktreeBase));
 
       for (const wt of worktrees) {
         await this.remove(wt);

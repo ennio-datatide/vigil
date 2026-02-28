@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { usePipelinesQuery, useUpdatePipeline, useCreatePipeline, useDeletePipeline } from '@/lib/api';
+import { useCallback, useState } from 'react';
 import { PipelineEditor } from '@/components/dashboard/pipeline-editor';
-import type { PipelineStep, PipelineEdge } from '@/lib/types';
+import {
+  useCreatePipeline,
+  useDeletePipeline,
+  usePipelinesQuery,
+  useUpdatePipeline,
+} from '@/lib/api';
+import type { PipelineEdge, PipelineStep } from '@/lib/types';
 
 export default function PipelinesPage() {
   const { data: pipelines, isLoading } = usePipelinesQuery();
@@ -74,6 +79,7 @@ export default function PipelinesPage() {
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-text-muted text-sm">No pipelines configured.</p>
         <button
+          type="button"
           onClick={handleCreatePipeline}
           className="btn-press rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
         >
@@ -105,7 +111,6 @@ export default function PipelinesPage() {
         {/* Pipeline name */}
         {editingName ? (
           <input
-            autoFocus
             value={nameValue}
             onChange={(e) => setNameValue(e.target.value)}
             onBlur={handleNameSave}
@@ -113,24 +118,28 @@ export default function PipelinesPage() {
             className="focus-accent rounded-lg border border-border-subtle bg-bg px-2 py-1 text-xl font-semibold tracking-tight text-text"
           />
         ) : (
-          <h1
-            className="cursor-pointer text-xl font-semibold tracking-tight text-text hover:text-accent"
+          <button
+            type="button"
+            className="cursor-pointer text-xl font-semibold tracking-tight text-text hover:text-accent bg-transparent border-none p-0"
             onClick={() => {
               setNameValue(activePipeline.name);
               setEditingName(true);
             }}
           >
             {activePipeline.name}
-          </h1>
+          </button>
         )}
 
         {activePipeline.isDefault && (
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">Default</span>
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">
+            Default
+          </span>
         )}
 
         <div className="flex-1" />
 
         <button
+          type="button"
           onClick={handleCreatePipeline}
           disabled={createPipeline.isPending}
           className="btn-press rounded-lg bg-accent/15 text-accent hover:bg-accent/25 px-3 py-1.5 text-xs"
@@ -140,6 +149,7 @@ export default function PipelinesPage() {
 
         {!activePipeline.isDefault && pipelines && pipelines.length > 1 && (
           <button
+            type="button"
             onClick={handleDeletePipeline}
             disabled={deletePipeline.isPending}
             className="btn-press rounded-lg text-xs text-status-error hover:bg-status-error/10 px-3 py-1.5"

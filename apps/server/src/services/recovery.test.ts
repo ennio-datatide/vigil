@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Db } from '../db/client.js';
 import * as schema from '../db/schema.js';
 import { RecoveryService } from './recovery.js';
-import type { Db } from '../db/client.js';
 
 function createTestDb() {
   const sqlite = new Database(':memory:');
@@ -63,15 +63,19 @@ function createTestDb() {
 }
 
 function insertSession(db: Db, overrides: Partial<typeof schema.sessions.$inferInsert> = {}) {
-  return db.insert(schema.sessions).values({
-    id: 'sess-1',
-    projectPath: '/tmp/project',
-    prompt: 'test prompt',
-    status: 'running',
-    agentType: 'claude',
-    startedAt: Date.now(),
-    ...overrides,
-  }).returning().get();
+  return db
+    .insert(schema.sessions)
+    .values({
+      id: 'sess-1',
+      projectPath: '/tmp/project',
+      prompt: 'test prompt',
+      status: 'running',
+      agentType: 'claude',
+      startedAt: Date.now(),
+      ...overrides,
+    })
+    .returning()
+    .get();
 }
 
 describe('RecoveryService', () => {
@@ -125,13 +129,25 @@ describe('RecoveryService', () => {
 
     expect(result.interrupted).toBe(1);
 
-    const completed = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-completed')).get();
+    const completed = db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, 'sess-completed'))
+      .get();
     expect(completed?.status).toBe('completed');
 
-    const queued = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-queued')).get();
+    const queued = db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, 'sess-queued'))
+      .get();
     expect(queued?.status).toBe('queued');
 
-    const running = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-running')).get();
+    const running = db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, 'sess-running'))
+      .get();
     expect(running?.status).toBe('interrupted');
   });
 });

@@ -1,7 +1,7 @@
-import type { FastifyPluginAsync } from 'fastify';
-import { eq } from 'drizzle-orm';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import type { FastifyPluginAsync } from 'fastify';
 import { sessions } from '../db/schema.js';
 import { safeSend } from '../utils/safe-send.js';
 
@@ -84,7 +84,11 @@ const terminalWs: FastifyPluginAsync = async (app) => {
 
         if (msg.type === 'input' && typeof msg.data === 'string') {
           app.ptyManager.write(sessionId, msg.data);
-        } else if (msg.type === 'resize' && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
+        } else if (
+          msg.type === 'resize' &&
+          typeof msg.cols === 'number' &&
+          typeof msg.rows === 'number'
+        ) {
           app.ptyManager.resize(sessionId, msg.cols, msg.rows);
         }
       } catch {

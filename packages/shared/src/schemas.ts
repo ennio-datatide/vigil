@@ -15,12 +15,7 @@ export const AgentType = z.enum(['claude', 'codex']);
 
 export const SessionRole = z.enum(['implementer', 'reviewer', 'fixer', 'custom']);
 
-export const ExitReason = z.enum([
-  'completed',
-  'error',
-  'user_cancelled',
-  'chain_triggered',
-]);
+export const ExitReason = z.enum(['completed', 'error', 'user_cancelled', 'chain_triggered']);
 
 export const HookEventType = z.enum([
   'SessionStart',

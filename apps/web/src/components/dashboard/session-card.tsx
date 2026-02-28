@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
+import { useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useCancelSession, useRemoveSession } from '@/lib/api';
 import { useToast } from '@/lib/stores/toast-store';
-import { StatusBadge } from './status-badge';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { Session } from '@/lib/types';
+import { StatusBadge } from './status-badge';
 
 function formatDuration(startedAt: number | null, endedAt?: number | null): string {
   if (!startedAt) return '--';
@@ -56,6 +56,7 @@ export function SessionCard({ session }: { session: Session }) {
         <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {isActive && (
             <button
+              type="button"
               onClick={() => setConfirmCancel(true)}
               className="btn-press rounded-md bg-status-error/10 px-2 py-1 text-xs font-medium text-status-error hover:bg-status-error/20"
             >
@@ -64,6 +65,7 @@ export function SessionCard({ session }: { session: Session }) {
           )}
           {isDone && (
             <button
+              type="button"
               onClick={() => setConfirmRemove(true)}
               className="btn-press flex h-5 w-5 items-center justify-center rounded-full bg-status-error/80 text-[10px] text-white hover:bg-status-error"
               aria-label="Remove session"
@@ -82,14 +84,10 @@ export function SessionCard({ session }: { session: Session }) {
             <StatusBadge status={session.status} />
           </div>
 
-          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text">
-            {session.prompt}
-          </p>
+          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text">{session.prompt}</p>
 
           <div className="mt-3 flex items-center justify-between text-xs text-text-faint">
-            <span className="truncate font-mono">
-              {session.projectPath.split('/').pop()}
-            </span>
+            <span className="truncate font-mono">{session.projectPath.split('/').pop()}</span>
             <span className="shrink-0 tabular-nums">
               {formatDuration(session.startedAt, session.endedAt)}
             </span>

@@ -1,5 +1,5 @@
-import { readdirSync, mkdirSync, symlinkSync, existsSync } from 'node:fs';
-import { join, basename, extname } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
+import { basename, extname, join } from 'node:path';
 
 export interface SkillInfo {
   name: string;
@@ -13,8 +13,8 @@ export class SkillManager {
     try {
       const files = readdirSync(this.skillsDir);
       return files
-        .filter(f => extname(f) === '.md')
-        .map(f => ({
+        .filter((f) => extname(f) === '.md')
+        .map((f) => ({
           name: basename(f, '.md'),
           path: join(this.skillsDir, f),
         }));

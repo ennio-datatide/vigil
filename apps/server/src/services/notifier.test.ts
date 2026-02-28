@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TelegramNotifier } from './notifier.js';
 
 const defaultConfig = {
@@ -28,12 +28,14 @@ describe('TelegramNotifier', () => {
 
   it('should not throw if telegram is not configured', async () => {
     const notifier = new TelegramNotifier(null);
-    await expect(notifier.send({
-      sessionId: 'abc',
-      type: 'needs_input',
-      projectName: 'Test',
-      prompt: 'test',
-    })).resolves.toBeUndefined();
+    await expect(
+      notifier.send({
+        sessionId: 'abc',
+        type: 'needs_input',
+        projectName: 'Test',
+        prompt: 'test',
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('should not call fetch when config is null', async () => {

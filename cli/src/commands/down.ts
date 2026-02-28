@@ -1,6 +1,6 @@
-import { readFileSync, unlinkSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export async function down() {
   const pidFile = join(homedir(), '.praefectus', 'server.pid');

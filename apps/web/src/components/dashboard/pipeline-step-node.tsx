@@ -1,7 +1,7 @@
 'use client';
 
+import { Handle, type NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { PipelineStep } from '@/lib/types';
 
 type PipelineStepNodeData = PipelineStep & { selected?: boolean };

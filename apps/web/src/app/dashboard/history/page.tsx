@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { Session } from '@/lib/types';
-import { StatusBadge } from '@/components/dashboard/status-badge';
 import Link from 'next/link';
 import { useState } from 'react';
+import { StatusBadge } from '@/components/dashboard/status-badge';
+import type { Session } from '@/lib/types';
 
 export default function HistoryPage() {
   const [search, setSearch] = useState('');
@@ -14,14 +14,14 @@ export default function HistoryPage() {
       const res = await fetch('/api/sessions');
       if (!res.ok) return [];
       const data = await res.json();
-      return Array.isArray(data) ? data as Session[] : [];
+      return Array.isArray(data) ? (data as Session[]) : [];
     },
   });
 
-  const filtered = sessions
-    ?.filter((s) => ['completed', 'failed', 'cancelled'].includes(s.status))
-    ?.filter((s) => !search || s.prompt.toLowerCase().includes(search.toLowerCase()))
-    ?? [];
+  const filtered =
+    sessions
+      ?.filter((s) => ['completed', 'failed', 'cancelled'].includes(s.status))
+      ?.filter((s) => !search || s.prompt.toLowerCase().includes(search.toLowerCase())) ?? [];
 
   return (
     <div className="p-4">
@@ -52,7 +52,8 @@ export default function HistoryPage() {
               <p className="mt-1 text-sm text-text-muted line-clamp-1">{session.prompt}</p>
               <div className="mt-1 text-xs text-text-faint">
                 {session.endedAt ? new Date(session.endedAt).toLocaleString() : '--'}
-                {' | '}{session.projectPath.split('/').pop()}
+                {' | '}
+                {session.projectPath.split('/').pop()}
               </div>
             </Link>
           ))}

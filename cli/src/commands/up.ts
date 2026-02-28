@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,11 +37,15 @@ export async function up(options: { daemon?: boolean }) {
 
   // Start server and web via turbo from monorepo root
   const monorepoRoot = join(__dirname, '..', '..', '..');
-  const child = spawn('npx', ['turbo', 'dev', '--filter=@praefectus/server', '--filter=@praefectus/web'], {
-    cwd: monorepoRoot,
-    detached: options.daemon,
-    stdio: options.daemon ? 'ignore' : 'inherit',
-  });
+  const child = spawn(
+    'npx',
+    ['turbo', 'dev', '--filter=@praefectus/server', '--filter=@praefectus/web'],
+    {
+      cwd: monorepoRoot,
+      detached: options.daemon,
+      stdio: options.daemon ? 'ignore' : 'inherit',
+    },
+  );
 
   if (options.daemon) {
     writeFileSync(pidFile, String(child.pid));
@@ -50,7 +54,11 @@ export async function up(options: { daemon?: boolean }) {
     console.log('Dashboard: http://localhost:3000');
   } else {
     child.on('close', (code) => {
-      try { unlinkSync(pidFile); } catch { /* ignore */ }
+      try {
+        unlinkSync(pidFile);
+      } catch {
+        /* ignore */
+      }
       process.exit(code ?? 0);
     });
     writeFileSync(pidFile, String(child.pid));

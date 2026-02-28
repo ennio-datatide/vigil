@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { settings } from '../db/schema.js';
 import type { Db } from '../db/client.js';
+import { settings } from '../db/schema.js';
 
 export interface TelegramSettings {
   botToken: string;
@@ -19,7 +19,9 @@ export class SettingsService {
   }
 
   set(key: string, value: string): void {
-    this.db.insert(settings).values({ key, value })
+    this.db
+      .insert(settings)
+      .values({ key, value })
       .onConflictDoUpdate({ target: settings.key, set: { value } })
       .run();
   }

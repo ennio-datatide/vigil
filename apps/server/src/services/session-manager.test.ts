@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Db } from '../db/client.js';
 import * as schema from '../db/schema.js';
 import { EventBus } from './event-bus.js';
 import { SessionManager } from './session-manager.js';
-import type { Db } from '../db/client.js';
 
 function createTestDb() {
   const sqlite = new Database(':memory:');
@@ -64,16 +64,20 @@ function createTestDb() {
 }
 
 function insertSession(db: Db, overrides: Partial<typeof schema.sessions.$inferInsert> = {}) {
-  return db.insert(schema.sessions).values({
-    id: 'sess-1',
-    projectPath: '/tmp/project',
-    prompt: 'test prompt',
-    status: 'running',
-    agentType: 'claude',
-    tmuxSession: 'pf-sess-1',
-    startedAt: Date.now(),
-    ...overrides,
-  }).returning().get();
+  return db
+    .insert(schema.sessions)
+    .values({
+      id: 'sess-1',
+      projectPath: '/tmp/project',
+      prompt: 'test prompt',
+      status: 'running',
+      agentType: 'claude',
+      tmuxSession: 'pf-sess-1',
+      startedAt: Date.now(),
+      ...overrides,
+    })
+    .returning()
+    .get();
 }
 
 describe('SessionManager', () => {
@@ -108,7 +112,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-1')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-1'))
+        .get();
       expect(session?.status).toBe('completed');
       expect(session?.endedAt).toBeDefined();
       expect(session?.endedAt).toBeGreaterThan(0);
@@ -127,7 +135,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-auth')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-auth'))
+        .get();
       expect(session?.status).toBe('auth_required');
     });
 
@@ -143,7 +155,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-unauth')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-unauth'))
+        .get();
       expect(session?.status).toBe('auth_required');
     });
 
@@ -159,7 +175,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-login')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-login'))
+        .get();
       expect(session?.status).toBe('auth_required');
     });
 
@@ -198,20 +218,36 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const failSession = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-fail')).get();
+      const failSession = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-fail'))
+        .get();
       expect(failSession?.status).toBe('auth_required');
 
-      const sibling1 = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-sibling-1')).get();
+      const sibling1 = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-sibling-1'))
+        .get();
       expect(sibling1?.status).toBe('auth_required');
       expect(sibling1?.endedAt).toBeDefined();
       expect(sibling1?.endedAt).toBeGreaterThan(0);
 
-      const sibling2 = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-sibling-2')).get();
+      const sibling2 = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-sibling-2'))
+        .get();
       expect(sibling2?.status).toBe('auth_required');
       expect(sibling2?.endedAt).toBeDefined();
       expect(sibling2?.endedAt).toBeGreaterThan(0);
 
-      const otherType = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-other-type')).get();
+      const otherType = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-other-type'))
+        .get();
       expect(otherType?.status).toBe('running');
     });
   });
@@ -219,14 +255,21 @@ describe('SessionManager', () => {
   describe('Chain trigger on Stop', () => {
     it('should insert follow-up session when chain rule matches', () => {
       manager.start();
-      insertSession(db, { id: 'sess-chain', status: 'running', skillsUsed: JSON.stringify(['implement']), projectPath: '/tmp/project' });
+      insertSession(db, {
+        id: 'sess-chain',
+        status: 'running',
+        skillsUsed: JSON.stringify(['implement']),
+        projectPath: '/tmp/project',
+      });
 
-      db.insert(schema.chainRules).values({
-        triggerEvent: 'Stop',
-        sourceSkill: 'implement',
-        targetSkill: 'review',
-        sameWorktree: 1,
-      }).run();
+      db.insert(schema.chainRules)
+        .values({
+          triggerEvent: 'Stop',
+          sourceSkill: 'implement',
+          targetSkill: 'review',
+          sameWorktree: 1,
+        })
+        .run();
 
       const updateHandler = vi.fn();
       bus.on('session_update', updateHandler);
@@ -241,7 +284,7 @@ describe('SessionManager', () => {
 
       // A new session record should exist in DB
       const allSessions = db.select().from(schema.sessions).all();
-      const followUp = allSessions.find(s => s.id !== 'sess-chain');
+      const followUp = allSessions.find((s) => s.id !== 'sess-chain');
       expect(followUp).toBeDefined();
       expect(followUp?.parentId).toBe('sess-chain');
       expect(followUp?.status).toBe('queued');
@@ -250,14 +293,20 @@ describe('SessionManager', () => {
 
     it('should not create follow-up when no chain rule matches', () => {
       manager.start();
-      insertSession(db, { id: 'sess-nochain', status: 'running', skillsUsed: JSON.stringify(['implement']) });
+      insertSession(db, {
+        id: 'sess-nochain',
+        status: 'running',
+        skillsUsed: JSON.stringify(['implement']),
+      });
 
-      db.insert(schema.chainRules).values({
-        triggerEvent: 'SessionStart',
-        sourceSkill: 'implement',
-        targetSkill: 'review',
-        sameWorktree: 1,
-      }).run();
+      db.insert(schema.chainRules)
+        .values({
+          triggerEvent: 'SessionStart',
+          sourceSkill: 'implement',
+          targetSkill: 'review',
+          sameWorktree: 1,
+        })
+        .run();
 
       bus.emit('hook_event', {
         sessionId: 'sess-nochain',
@@ -273,14 +322,21 @@ describe('SessionManager', () => {
 
     it('should insert follow-up for wildcard source skill (null)', () => {
       manager.start();
-      insertSession(db, { id: 'sess-wildchain', status: 'running', skillsUsed: JSON.stringify(['anything']), projectPath: '/tmp/wildcard-project' });
+      insertSession(db, {
+        id: 'sess-wildchain',
+        status: 'running',
+        skillsUsed: JSON.stringify(['anything']),
+        projectPath: '/tmp/wildcard-project',
+      });
 
-      db.insert(schema.chainRules).values({
-        triggerEvent: 'Stop',
-        sourceSkill: null,
-        targetSkill: 'cleanup',
-        sameWorktree: 0,
-      }).run();
+      db.insert(schema.chainRules)
+        .values({
+          triggerEvent: 'Stop',
+          sourceSkill: null,
+          targetSkill: 'cleanup',
+          sameWorktree: 0,
+        })
+        .run();
 
       bus.emit('hook_event', {
         sessionId: 'sess-wildchain',
@@ -292,7 +348,7 @@ describe('SessionManager', () => {
 
       // A new session record should exist in DB for the follow-up
       const allSessions = db.select().from(schema.sessions).all();
-      const followUp = allSessions.find(s => s.id !== 'sess-wildchain');
+      const followUp = allSessions.find((s) => s.id !== 'sess-wildchain');
       expect(followUp).toBeDefined();
       expect(followUp?.projectPath).toBe('/tmp/wildcard-project');
       expect(followUp?.prompt).toBe('Run skill: cleanup');
@@ -301,14 +357,21 @@ describe('SessionManager', () => {
 
     it('should NOT fire chain rules when Stop event contains auth errors', () => {
       manager.start();
-      insertSession(db, { id: 'sess-auth-chain', status: 'running', skillsUsed: JSON.stringify(['implement']), projectPath: '/tmp/project' });
+      insertSession(db, {
+        id: 'sess-auth-chain',
+        status: 'running',
+        skillsUsed: JSON.stringify(['implement']),
+        projectPath: '/tmp/project',
+      });
 
-      db.insert(schema.chainRules).values({
-        triggerEvent: 'Stop',
-        sourceSkill: 'implement',
-        targetSkill: 'review',
-        sameWorktree: 1,
-      }).run();
+      db.insert(schema.chainRules)
+        .values({
+          triggerEvent: 'Stop',
+          sourceSkill: 'implement',
+          targetSkill: 'review',
+          sameWorktree: 1,
+        })
+        .run();
 
       bus.emit('hook_event', {
         sessionId: 'sess-auth-chain',
@@ -322,7 +385,11 @@ describe('SessionManager', () => {
       const allSessions = db.select().from(schema.sessions).all();
       expect(allSessions).toHaveLength(1);
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-auth-chain')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-auth-chain'))
+        .get();
       expect(session?.status).toBe('auth_required');
     });
   });
@@ -333,7 +400,11 @@ describe('SessionManager', () => {
 
       manager.handleProcessExit('sess-exit-ok', 0);
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-exit-ok')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-exit-ok'))
+        .get();
       expect(session?.status).toBe('completed');
       expect(session?.exitReason).toBe('completed');
     });
@@ -343,7 +414,11 @@ describe('SessionManager', () => {
 
       manager.handleProcessExit('sess-exit-fail', 1);
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-exit-fail')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-exit-fail'))
+        .get();
       expect(session?.status).toBe('failed');
       expect(session?.exitReason).toBe('error');
     });
@@ -353,7 +428,11 @@ describe('SessionManager', () => {
 
       manager.handleProcessExit('sess-already-done', 0);
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-already-done')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-already-done'))
+        .get();
       expect(session?.status).toBe('completed');
     });
 
@@ -378,7 +457,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-input')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-input'))
+        .get();
       expect(session?.status).toBe('needs_input');
 
       expect(notificationHandler).toHaveBeenCalledWith({
@@ -403,7 +486,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-info')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-info'))
+        .get();
       expect(session?.status).toBe('running');
 
       expect(notificationHandler).toHaveBeenCalledWith({
@@ -427,7 +514,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-lifecycle')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-lifecycle'))
+        .get();
       expect(session?.status).toBe('completed');
     });
 
@@ -445,7 +536,11 @@ describe('SessionManager', () => {
         timestamp: Date.now(),
       });
 
-      const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess-stopped')).get();
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-stopped'))
+        .get();
       expect(session?.status).toBe('running');
     });
 

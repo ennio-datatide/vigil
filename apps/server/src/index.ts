@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { resolveConfig, loadConfigFile } from './config.js';
+import { loadConfigFile, resolveConfig } from './config.js';
 
 async function main() {
   const config = resolveConfig();

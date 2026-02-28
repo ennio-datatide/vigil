@@ -1,5 +1,5 @@
+import { desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
-import { eq, isNull, desc } from 'drizzle-orm';
 import { notifications } from '../db/schema.js';
 
 const notificationsRoute: FastifyPluginAsync = async (app) => {
@@ -9,15 +9,15 @@ const notificationsRoute: FastifyPluginAsync = async (app) => {
     const { unread } = request.query;
 
     if (unread === 'true') {
-      return app.db.select().from(notifications)
+      return app.db
+        .select()
+        .from(notifications)
         .where(isNull(notifications.readAt))
         .orderBy(desc(notifications.id))
         .all();
     }
 
-    return app.db.select().from(notifications)
-      .orderBy(desc(notifications.id))
-      .all();
+    return app.db.select().from(notifications).orderBy(desc(notifications.id)).all();
   });
 
   // Mark a notification as read
@@ -32,10 +32,12 @@ const notificationsRoute: FastifyPluginAsync = async (app) => {
       return reply.status(404).send({ error: 'Notification not found' });
     }
 
-    const updated = app.db.update(notifications)
+    const updated = app.db
+      .update(notifications)
       .set({ readAt: Date.now() })
       .where(eq(notifications.id, id))
-      .returning().get();
+      .returning()
+      .get();
 
     return updated;
   });

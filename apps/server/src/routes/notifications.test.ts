@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { notifications } from '../db/schema.js';
 
@@ -6,7 +6,7 @@ describe('notifications routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-notifications-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-notifications-${Date.now()}` });
   });
 
   afterAll(async () => {
@@ -20,19 +20,25 @@ describe('notifications routes', () => {
   });
 
   it('GET /api/notifications should return inserted notifications', async () => {
-    app.db.insert(notifications).values({
-      sessionId: 'sess-1',
-      type: 'needs_input',
-      message: 'Need user confirmation',
-      sentAt: Date.now(),
-    }).run();
+    app.db
+      .insert(notifications)
+      .values({
+        sessionId: 'sess-1',
+        type: 'needs_input',
+        message: 'Need user confirmation',
+        sentAt: Date.now(),
+      })
+      .run();
 
-    app.db.insert(notifications).values({
-      sessionId: 'sess-2',
-      type: 'error',
-      message: 'Something broke',
-      sentAt: Date.now(),
-    }).run();
+    app.db
+      .insert(notifications)
+      .values({
+        sessionId: 'sess-2',
+        type: 'error',
+        message: 'Something broke',
+        sentAt: Date.now(),
+      })
+      .run();
 
     const res = await app.inject({ method: 'GET', url: '/api/notifications' });
     expect(res.statusCode).toBe(200);
@@ -58,7 +64,7 @@ describe('notifications routes', () => {
 
   it('PATCH /api/notifications/:id/read should mark notification as read', async () => {
     const all = await app.inject({ method: 'GET', url: '/api/notifications' });
-    const unreadNotification = all.json().find((n: any) => n.readAt === null);
+    const unreadNotification = all.json().find((n: Record<string, unknown>) => n.readAt === null);
 
     const res = await app.inject({
       method: 'PATCH',

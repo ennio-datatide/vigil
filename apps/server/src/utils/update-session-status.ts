@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { sessions } from '../db/schema.js';
 import type { Db } from '../db/client.js';
+import { sessions } from '../db/schema.js';
 import type { EventBus } from '../services/event-bus.js';
 
 export function updateSessionStatus(

@@ -19,10 +19,15 @@ export default function AuthPage() {
       <div className="mb-6 glass rounded-xl p-6">
         <h3 className="mb-2 text-sm font-medium">Server Status</h3>
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${
-            isLoading ? 'bg-status-needs-input' :
-            data?.status === 'ok' ? 'bg-status-working shadow-[0_0_6px_1px] shadow-status-working/50' : 'bg-status-error'
-          }`} />
+          <span
+            className={`h-2 w-2 rounded-full ${
+              isLoading
+                ? 'bg-status-needs-input'
+                : data?.status === 'ok'
+                  ? 'bg-status-working shadow-[0_0_6px_1px] shadow-status-working/50'
+                  : 'bg-status-error'
+            }`}
+          />
           <span className="text-sm text-text-muted">
             {isLoading ? 'Checking...' : data?.status === 'ok' ? 'Connected' : 'Disconnected'}
           </span>

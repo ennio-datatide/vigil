@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('POST /events', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-events-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-events-${Date.now()}` });
 
     // Initialize schema tables (in-memory / fresh DB needs DDL)
     const { initializeSchema } = await import('../db/client.js');
@@ -13,13 +13,16 @@ describe('POST /events', () => {
 
     // Seed a session so FK is valid
     const { sessions } = await import('../db/schema.js');
-    app.db.insert(sessions).values({
-      id: 'sess-abc',
-      projectPath: '/tmp/test',
-      prompt: 'test',
-      status: 'running',
-      agentType: 'claude',
-    }).run();
+    app.db
+      .insert(sessions)
+      .values({
+        id: 'sess-abc',
+        projectPath: '/tmp/test',
+        prompt: 'test',
+        status: 'running',
+        agentType: 'claude',
+      })
+      .run();
   });
 
   afterAll(async () => {
@@ -55,7 +58,7 @@ describe('POST /events', () => {
   });
 
   it('should emit events on the event bus', async () => {
-    const events: any[] = [];
+    const events: unknown[] = [];
     app.eventBus.on('hook_event', (e) => events.push(e));
 
     await app.inject({

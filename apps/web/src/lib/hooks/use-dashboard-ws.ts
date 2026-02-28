@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../stores/session-store';
-import { wsUrl } from '../ws-url';
 import type { WsMessage } from '../types';
+import { wsUrl } from '../ws-url';
 
 export function useDashboardWs() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -35,10 +35,7 @@ export function useDashboardWs() {
 
     ws.onclose = () => {
       // Exponential backoff reconnect
-      const delay = Math.min(
-        1000 * Math.pow(2, reconnectAttemptRef.current),
-        30000,
-      );
+      const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 30000);
       reconnectAttemptRef.current++;
       reconnectTimeoutRef.current = setTimeout(connect, delay);
     };

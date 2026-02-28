@@ -17,7 +17,7 @@ const settingsRoute: FastifyPluginAsync = async (app) => {
     if (!config) return { configured: false };
     return {
       configured: true,
-      botToken: config.botToken.slice(0, 4) + '...' + config.botToken.slice(-4),
+      botToken: `${config.botToken.slice(0, 4)}...${config.botToken.slice(-4)}`,
       chatId: config.chatId,
       dashboardUrl: config.dashboardUrl,
       enabled: config.enabled,
@@ -35,7 +35,11 @@ const settingsRoute: FastifyPluginAsync = async (app) => {
 
     // Re-initialize notifier with new config
     const notifierConfig = parsed.data.enabled
-      ? { botToken: parsed.data.botToken, chatId: parsed.data.chatId, dashboardUrl: parsed.data.dashboardUrl }
+      ? {
+          botToken: parsed.data.botToken,
+          chatId: parsed.data.chatId,
+          dashboardUrl: parsed.data.dashboardUrl,
+        }
       : null;
     app.notifier = new TelegramNotifier(notifierConfig);
 

@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('projects routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-projects-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-projects-${Date.now()}` });
   });
 
   afterAll(async () => {

@@ -1,33 +1,33 @@
-import Fastify from 'fastify';
+import { mkdirSync } from 'node:fs';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { mkdirSync } from 'node:fs';
-import { resolveConfig, type PraefectusConfig } from './config.js';
-import { createDb, initializeSchema, type Db } from './db/client.js';
-import { EventBus } from './services/event-bus.js';
-import { OutputManager } from './services/output-manager.js';
-import { WorktreeManager } from './services/worktree-manager.js';
-import { SkillManager } from './services/skill-manager.js';
-import { AgentSpawner } from './services/agent-spawner.js';
-import { PtyManager } from './services/pty-manager.js';
-import { SessionManager } from './services/session-manager.js';
-import { RecoveryService } from './services/recovery.js';
-import { CleanupService } from './services/cleanup.js';
-import { TelegramNotifier } from './services/notifier.js';
-import { SettingsService } from './services/settings-service.js';
-import { PipelineService } from './services/pipeline-service.js';
 import { eq } from 'drizzle-orm';
+import Fastify from 'fastify';
+import { type PraefectusConfig, resolveConfig } from './config.js';
+import { createDb, type Db, initializeSchema } from './db/client.js';
 import { sessions } from './db/schema.js';
-import terminalWs from './ws/terminal.js';
-import dashboardWs from './ws/dashboard.js';
 import eventsRoute from './routes/events.js';
-import sessionsRoute from './routes/sessions.js';
-import projectsRoute from './routes/projects.js';
-import skillsRoute from './routes/skills.js';
-import notificationsRoute from './routes/notifications.js';
 import fsRoute from './routes/fs.js';
-import settingsRoute from './routes/settings.js';
+import notificationsRoute from './routes/notifications.js';
 import pipelinesRoute from './routes/pipelines.js';
+import projectsRoute from './routes/projects.js';
+import sessionsRoute from './routes/sessions.js';
+import settingsRoute from './routes/settings.js';
+import skillsRoute from './routes/skills.js';
+import { AgentSpawner } from './services/agent-spawner.js';
+import { CleanupService } from './services/cleanup.js';
+import { EventBus } from './services/event-bus.js';
+import { TelegramNotifier } from './services/notifier.js';
+import { OutputManager } from './services/output-manager.js';
+import { PipelineService } from './services/pipeline-service.js';
+import { PtyManager } from './services/pty-manager.js';
+import { RecoveryService } from './services/recovery.js';
+import { SessionManager } from './services/session-manager.js';
+import { SettingsService } from './services/settings-service.js';
+import { SkillManager } from './services/skill-manager.js';
+import { WorktreeManager } from './services/worktree-manager.js';
+import dashboardWs from './ws/dashboard.js';
+import terminalWs from './ws/terminal.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -89,26 +89,33 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
   // Cleanup: periodic worktree garbage collection
   const cleanupService = new CleanupService(db, worktreeManager);
   const cleanupInterval = setInterval(() => {
-    cleanupService.cleanupWorktrees().catch(err => app.log.error(err, 'Cleanup failed'));
+    cleanupService.cleanupWorktrees().catch((err) => app.log.error(err, 'Cleanup failed'));
   }, CLEANUP_INTERVAL_MS);
 
   // Telegram notifier (optional)
-  const telegramConfig = config.telegram && config.dashboardUrl
-    ? { botToken: config.telegram.botToken, chatId: config.telegram.chatId, dashboardUrl: config.dashboardUrl }
-    : null;
+  const telegramConfig =
+    config.telegram && config.dashboardUrl
+      ? {
+          botToken: config.telegram.botToken,
+          chatId: config.telegram.chatId,
+          dashboardUrl: config.dashboardUrl,
+        }
+      : null;
   const notifier = new TelegramNotifier(telegramConfig);
 
   eventBus.on('notification', (data) => {
     const telegramConfig = settingsService.getTelegramConfig();
-    if (telegramConfig && telegramConfig.enabled && telegramConfig.events.includes(data.type)) {
+    if (telegramConfig?.enabled && telegramConfig.events.includes(data.type)) {
       const session = db.select().from(sessions).where(eq(sessions.id, data.sessionId)).get();
       if (session) {
-        app.notifier.send({
-          sessionId: data.sessionId,
-          type: data.type,
-          projectName: session.projectPath.split('/').pop() ?? session.projectPath,
-          prompt: session.prompt,
-        }).catch(err => app.log.error(err, 'Telegram notification failed'));
+        app.notifier
+          .send({
+            sessionId: data.sessionId,
+            type: data.type,
+            projectName: session.projectPath.split('/').pop() ?? session.projectPath,
+            prompt: session.prompt,
+          })
+          .catch((err) => app.log.error(err, 'Telegram notification failed'));
       }
     }
   });

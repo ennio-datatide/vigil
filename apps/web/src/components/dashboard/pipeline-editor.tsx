@@ -1,21 +1,21 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  useNodesState,
-  useEdgesState,
   addEdge,
+  Background,
+  BackgroundVariant,
   type Connection,
+  Controls,
   type Edge,
   type Node,
-  BackgroundVariant,
+  ReactFlow,
+  useEdgesState,
+  useNodesState,
 } from '@xyflow/react';
+import { useCallback, useMemo, useState } from 'react';
 import '@xyflow/react/dist/style.css';
 import { nanoid } from 'nanoid';
-import type { Pipeline, PipelineStep, PipelineEdge } from '@/lib/types';
+import type { Pipeline, PipelineEdge, PipelineStep } from '@/lib/types';
 import { PipelineStepNode } from './pipeline-step-node';
 import { StepConfigPanel } from './step-config-panel';
 
@@ -76,7 +76,16 @@ export function PipelineEditor({ pipeline, onSave, saving }: PipelineEditorProps
     (connection: Connection) => {
       // Prevent self-connections
       if (connection.source === connection.target) return;
-      setEdges((eds) => addEdge({ ...connection, animated: true, style: { stroke: 'var(--color-text-muted)', strokeWidth: 2 } }, eds));
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            animated: true,
+            style: { stroke: 'var(--color-text-muted)', strokeWidth: 2 },
+          },
+          eds,
+        ),
+      );
       setDirty(true);
     },
     [setEdges],
@@ -135,11 +144,7 @@ export function PipelineEditor({ pipeline, onSave, saving }: PipelineEditorProps
   const updateStep = useCallback(
     (updatedStep: PipelineStep) => {
       setNodes((nds) =>
-        nds.map((n) =>
-          n.id === updatedStep.id
-            ? { ...n, data: updatedStep }
-            : n,
-        ),
+        nds.map((n) => (n.id === updatedStep.id ? { ...n, data: updatedStep } : n)),
       );
       setDirty(true);
     },
@@ -167,16 +172,16 @@ export function PipelineEditor({ pipeline, onSave, saving }: PipelineEditorProps
         {/* Toolbar */}
         <div className="glass-strong rounded-xl flex items-center gap-3 border-b border-border px-4 py-2">
           <button
+            type="button"
             onClick={addStep}
             className="btn-press rounded-lg bg-accent/15 text-accent hover:bg-accent/25 px-3 py-1.5 text-xs"
           >
             + Add Step
           </button>
           <div className="flex-1" />
-          {dirty && (
-            <span className="text-xs text-accent">Unsaved changes</span>
-          )}
+          {dirty && <span className="text-xs text-accent">Unsaved changes</span>}
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || !dirty}
             className="btn-press rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-50 px-4 py-1.5 text-xs font-medium"
@@ -200,7 +205,12 @@ export function PipelineEditor({ pipeline, onSave, saving }: PipelineEditorProps
             deleteKeyCode="Backspace"
             proOptions={{ hideAttribution: true }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border)" />
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1}
+              color="var(--color-border)"
+            />
             <Controls
               showInteractive={false}
               className="!bg-surface !border-border !shadow-sm [&>button]:!bg-surface [&>button]:!border-border [&>button]:!fill-text-muted [&>button:hover]:!bg-surface-hover"

@@ -1,17 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('sessions routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-sessions-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-sessions-${Date.now()}` });
     // Seed a project
     const { projects } = await import('../db/schema.js');
-    app.db.insert(projects).values({
-      path: '/tmp/test-project',
-      name: 'Test Project',
-    }).run();
+    app.db
+      .insert(projects)
+      .values({
+        path: '/tmp/test-project',
+        name: 'Test Project',
+      })
+      .run();
   });
 
   afterAll(async () => {
@@ -89,12 +92,15 @@ describe('sessions routes', () => {
     it('should return 400 for running session', async () => {
       // Seed a running session directly
       const { sessions } = await import('../db/schema.js');
-      app.db.insert(sessions).values({
-        id: 'running-sess',
-        projectPath: '/tmp/test-project',
-        prompt: 'running prompt',
-        status: 'running',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'running-sess',
+          projectPath: '/tmp/test-project',
+          prompt: 'running prompt',
+          status: 'running',
+        })
+        .run();
 
       const res = await app.inject({
         method: 'POST',
@@ -105,13 +111,16 @@ describe('sessions routes', () => {
 
     it('should return 400 for session without worktree path', async () => {
       const { sessions } = await import('../db/schema.js');
-      app.db.insert(sessions).values({
-        id: 'no-wt-sess',
-        projectPath: '/tmp/test-project',
-        prompt: 'no worktree',
-        status: 'completed',
-        worktreePath: null,
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'no-wt-sess',
+          projectPath: '/tmp/test-project',
+          prompt: 'no worktree',
+          status: 'completed',
+          worktreePath: null,
+        })
+        .run();
 
       const res = await app.inject({
         method: 'POST',
@@ -122,13 +131,16 @@ describe('sessions routes', () => {
 
     it('should create a new session when resuming a completed session with worktree', async () => {
       const { sessions } = await import('../db/schema.js');
-      app.db.insert(sessions).values({
-        id: 'completed-sess',
-        projectPath: '/tmp/test-project',
-        prompt: 'completed prompt',
-        status: 'completed',
-        worktreePath: '/tmp/some-worktree',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'completed-sess',
+          projectPath: '/tmp/test-project',
+          prompt: 'completed prompt',
+          status: 'completed',
+          worktreePath: '/tmp/some-worktree',
+        })
+        .run();
 
       const res = await app.inject({
         method: 'POST',
@@ -145,18 +157,21 @@ describe('sessions routes', () => {
   describe('git metadata', () => {
     it('should include parsed gitMetadata in session responses', async () => {
       const { sessions } = await import('../db/schema.js');
-      app.db.insert(sessions).values({
-        id: 'meta-sess',
-        projectPath: '/tmp/test-project',
-        prompt: 'meta test',
-        status: 'running',
-        gitMetadata: JSON.stringify({
-          repoName: 'my-repo',
-          branch: 'main',
-          commitHash: 'abc1234',
-          remoteUrl: 'https://github.com/user/repo.git',
-        }),
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'meta-sess',
+          projectPath: '/tmp/test-project',
+          prompt: 'meta test',
+          status: 'running',
+          gitMetadata: JSON.stringify({
+            repoName: 'my-repo',
+            branch: 'main',
+            commitHash: 'abc1234',
+            remoteUrl: 'https://github.com/user/repo.git',
+          }),
+        })
+        .run();
 
       const res = await app.inject({
         method: 'GET',
@@ -174,12 +189,15 @@ describe('sessions routes', () => {
 
     it('should return null gitMetadata when not set', async () => {
       const { sessions } = await import('../db/schema.js');
-      app.db.insert(sessions).values({
-        id: 'no-meta-sess',
-        projectPath: '/tmp/test-project',
-        prompt: 'no meta',
-        status: 'running',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'no-meta-sess',
+          projectPath: '/tmp/test-project',
+          prompt: 'no meta',
+          status: 'running',
+        })
+        .run();
 
       const res = await app.inject({
         method: 'GET',

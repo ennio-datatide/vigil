@@ -20,13 +20,15 @@ export async function start(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      console.error(`Failed to start session: ${(err as { error?: string }).error ?? res.statusText}`);
+      console.error(
+        `Failed to start session: ${(err as { error?: string }).error ?? res.statusText}`,
+      );
       process.exit(1);
     }
 
     const session = (await res.json()) as { id: string; status: string };
     console.log(`Session started: ${session.id} (${session.status})`);
-  } catch (err) {
+  } catch (_err) {
     console.error('Could not reach Praefectus server. Is it running? Try: praefectus up');
     process.exit(1);
   }

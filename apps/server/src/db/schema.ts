@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
@@ -48,8 +48,8 @@ export const pipelines = sqliteTable('pipelines', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description').default(''),
-  steps: text('steps').notNull(),       // JSON array of PipelineStep
-  edges: text('edges').notNull(),       // JSON array of PipelineEdge
+  steps: text('steps').notNull(), // JSON array of PipelineStep
+  edges: text('edges').notNull(), // JSON array of PipelineEdge
   isDefault: integer('is_default').default(0),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),

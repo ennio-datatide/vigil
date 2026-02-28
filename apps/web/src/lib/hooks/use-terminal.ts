@@ -69,7 +69,10 @@ export function useTerminal(
           // WebGL not supported, canvas renderer is fine
         }
 
-        if (disposed) { term.dispose(); return; }
+        if (disposed) {
+          term.dispose();
+          return;
+        }
 
         fitAddon.fit();
 
@@ -165,12 +168,13 @@ export function useTerminal(
             if (ws && ws.readyState === WebSocket.OPEN && term) {
               ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
             }
-          } catch { /* ignore fit errors */ }
+          } catch {
+            /* ignore fit errors */
+          }
         };
 
         resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(container);
-
       } catch (err) {
         console.error('[useTerminal] Failed to initialize:', err);
       }
@@ -185,7 +189,7 @@ export function useTerminal(
       term?.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, containerRef.current]);
 
   /** Send text input to the PTY (for mobile input bar). */
   const sendInput = (text: string) => {

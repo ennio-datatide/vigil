@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useToastStore } from '@/lib/stores/toast-store';
 
 const TYPE_COLORS = {

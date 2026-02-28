@@ -1,8 +1,8 @@
-import type { FastifyPluginAsync } from 'fastify';
+import { CreateSessionInput } from '@praefectus/shared';
 import { eq } from 'drizzle-orm';
+import type { FastifyPluginAsync } from 'fastify';
 import { nanoid } from 'nanoid';
 import { sessions } from '../db/schema.js';
-import { CreateSessionInput } from '@praefectus/shared';
 import { withParsedGitMetadata } from '../utils/parse-git-metadata.js';
 
 const sessionsRoute: FastifyPluginAsync = async (app) => {
@@ -44,24 +44,29 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const session = app.db.insert(sessions).values({
-      id,
-      projectPath,
-      prompt: effectivePrompt,
-      skillsUsed: effectiveSkill ? JSON.stringify([effectiveSkill]) : null,
-      status: 'queued',
-      agentType: 'claude',
-      role: role ?? null,
-      parentId: parentId ?? null,
-      pipelineId: pipelineId ?? null,
-      pipelineStepIndex,
-    }).returning().get();
+    const session = app.db
+      .insert(sessions)
+      .values({
+        id,
+        projectPath,
+        prompt: effectivePrompt,
+        skillsUsed: effectiveSkill ? JSON.stringify([effectiveSkill]) : null,
+        status: 'queued',
+        agentType: 'claude',
+        role: role ?? null,
+        parentId: parentId ?? null,
+        pipelineId: pipelineId ?? null,
+        pipelineStepIndex,
+      })
+      .returning()
+      .get();
 
     app.eventBus.emit('session_update', { sessionId: id, status: 'queued' });
 
     // Spawn interactive PTY session asynchronously
     // Status updates are handled via session_spawned / session_spawn_failed events
-    app.agentSpawner.spawnInteractive({ sessionId: id, projectPath, prompt: effectivePrompt, skipPermissions })
+    app.agentSpawner
+      .spawnInteractive({ sessionId: id, projectPath, prompt: effectivePrompt, skipPermissions })
       .catch((err) => {
         app.log.error({ err, sessionId: id }, 'Failed to spawn agent');
       });
@@ -80,30 +85,37 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
     }
 
     if (!original.worktreePath) {
-      return reply.status(400).send({ error: 'No worktree path found for session — cannot resume' });
+      return reply
+        .status(400)
+        .send({ error: 'No worktree path found for session — cannot resume' });
     }
 
     const id = nanoid(12);
 
-    const newSession = app.db.insert(sessions).values({
-      id,
-      projectPath: original.projectPath,
-      prompt: 'Resumed conversation',
-      status: 'queued',
-      agentType: 'claude',
-      parentId: original.id,
-      gitMetadata: original.gitMetadata,
-    }).returning().get();
+    const newSession = app.db
+      .insert(sessions)
+      .values({
+        id,
+        projectPath: original.projectPath,
+        prompt: 'Resumed conversation',
+        status: 'queued',
+        agentType: 'claude',
+        parentId: original.id,
+        gitMetadata: original.gitMetadata,
+      })
+      .returning()
+      .get();
 
     app.eventBus.emit('session_update', { sessionId: id, status: 'queued' });
 
     // Spawn with --continue in the original worktree
     // Status updates are handled via session_spawned / session_spawn_failed events
-    app.agentSpawner.spawnInteractive({
-      sessionId: id,
-      projectPath: original.projectPath,
-      continueInWorktree: original.worktreePath,
-    })
+    app.agentSpawner
+      .spawnInteractive({
+        sessionId: id,
+        projectPath: original.projectPath,
+        continueInWorktree: original.worktreePath,
+      })
       .catch((err) => {
         app.log.error({ err, sessionId: id }, 'Failed to resume session');
       });
@@ -119,14 +131,17 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
     // Kill the child process by session ID
     await app.agentSpawner.kill(request.params.id);
 
-    const updated = app.db.update(sessions)
+    const updated = app.db
+      .update(sessions)
       .set({ status: 'cancelled', endedAt: Date.now(), exitReason: 'user_cancelled' })
       .where(eq(sessions.id, request.params.id))
-      .returning().get();
+      .returning()
+      .get();
 
     app.eventBus.emit('session_update', { sessionId: request.params.id, status: 'cancelled' });
 
-    return withParsedGitMetadata(updated!);
+    if (!updated) return reply.status(500).send({ error: 'Failed to update session' });
+    return withParsedGitMetadata(updated);
   });
 
   // Restart a completed/failed/cancelled session in-place (same ID, same worktree, --continue)
@@ -143,7 +158,8 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
     }
 
     // Reset session status
-    app.db.update(sessions)
+    app.db
+      .update(sessions)
       .set({ status: 'queued', endedAt: null, exitReason: null })
       .where(eq(sessions.id, session.id))
       .run();
@@ -152,19 +168,25 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
 
     // Ensure output buffer exists (may be gone after server restart)
     app.outputManager.createBuffer(session.id);
-    app.outputManager.append(session.id, '\r\n\x1b[36m[Restarting session with --continue...]\x1b[0m\r\n');
+    app.outputManager.append(
+      session.id,
+      '\r\n\x1b[36m[Restarting session with --continue...]\x1b[0m\r\n',
+    );
 
     // Spawn new PTY with --continue in the same worktree
-    app.agentSpawner.spawnInteractive({
-      sessionId: session.id,
-      projectPath: session.projectPath,
-      continueInWorktree: session.worktreePath,
-    }).catch((err) => {
-      app.log.error({ err, sessionId: session.id }, 'Failed to restart session');
-    });
+    app.agentSpawner
+      .spawnInteractive({
+        sessionId: session.id,
+        projectPath: session.projectPath,
+        continueInWorktree: session.worktreePath,
+      })
+      .catch((err) => {
+        app.log.error({ err, sessionId: session.id }, 'Failed to restart session');
+      });
 
     const updated = app.db.select().from(sessions).where(eq(sessions.id, session.id)).get();
-    return withParsedGitMetadata(updated!);
+    if (!updated) return reply.status(500).send({ error: 'Failed to fetch updated session' });
+    return withParsedGitMetadata(updated);
   });
 
   // Permanently remove a session from the database

@@ -1,6 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
 
 export interface PraefectusConfig {
   praefectusHome: string;

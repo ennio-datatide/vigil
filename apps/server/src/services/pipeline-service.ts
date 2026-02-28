@@ -1,8 +1,8 @@
+import type { Pipeline, PipelineEdge, PipelineStep } from '@praefectus/shared';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { pipelines } from '../db/schema.js';
 import type { Db } from '../db/client.js';
-import type { Pipeline, PipelineStep, PipelineEdge } from '@praefectus/shared';
+import { pipelines } from '../db/schema.js';
 
 interface CreatePipelineInput {
   name: string;
@@ -25,10 +25,14 @@ function rowToPipeline(row: typeof pipelines.$inferSelect): Pipeline {
   let edges: PipelineEdge[] = [];
   try {
     steps = JSON.parse(row.steps) as PipelineStep[];
-  } catch { /* corrupted steps — default to empty */ }
+  } catch {
+    /* corrupted steps — default to empty */
+  }
   try {
     edges = JSON.parse(row.edges) as PipelineEdge[];
-  } catch { /* corrupted edges — default to empty */ }
+  } catch {
+    /* corrupted edges — default to empty */
+  }
 
   return {
     id: row.id,
@@ -43,12 +47,54 @@ function rowToPipeline(row: typeof pipelines.$inferSelect): Pipeline {
 }
 
 const DEFAULT_STEPS: PipelineStep[] = [
-  { id: 'step-brainstorm', skill: 'brainstorming', label: 'Brainstorm', agent: 'claude', prompt: 'Run the brainstorming skill to explore the problem space.', position: { x: 0, y: 0 } },
-  { id: 'step-worktree', skill: 'using-git-worktrees', label: 'Setup Worktree', agent: 'claude', prompt: 'Set up a git worktree for isolated development.', position: { x: 250, y: 0 } },
-  { id: 'step-plan', skill: 'writing-plans', label: 'Write Plan', agent: 'claude', prompt: 'Write a detailed implementation plan.', position: { x: 500, y: 0 } },
-  { id: 'step-implement', skill: 'subagent-driven-development', label: 'Implement', agent: 'claude', prompt: 'Implement the plan using subagent-driven development.', position: { x: 750, y: 0 } },
-  { id: 'step-review', skill: 'requesting-code-review', label: 'Code Review', agent: 'claude', prompt: 'Request a code review of the implementation.', position: { x: 1000, y: 0 } },
-  { id: 'step-finish', skill: 'finishing-a-development-branch', label: 'Finish Branch', agent: 'claude', prompt: 'Finish the development branch and prepare for merge.', position: { x: 1250, y: 0 } },
+  {
+    id: 'step-brainstorm',
+    skill: 'brainstorming',
+    label: 'Brainstorm',
+    agent: 'claude',
+    prompt: 'Run the brainstorming skill to explore the problem space.',
+    position: { x: 0, y: 0 },
+  },
+  {
+    id: 'step-worktree',
+    skill: 'using-git-worktrees',
+    label: 'Setup Worktree',
+    agent: 'claude',
+    prompt: 'Set up a git worktree for isolated development.',
+    position: { x: 250, y: 0 },
+  },
+  {
+    id: 'step-plan',
+    skill: 'writing-plans',
+    label: 'Write Plan',
+    agent: 'claude',
+    prompt: 'Write a detailed implementation plan.',
+    position: { x: 500, y: 0 },
+  },
+  {
+    id: 'step-implement',
+    skill: 'subagent-driven-development',
+    label: 'Implement',
+    agent: 'claude',
+    prompt: 'Implement the plan using subagent-driven development.',
+    position: { x: 750, y: 0 },
+  },
+  {
+    id: 'step-review',
+    skill: 'requesting-code-review',
+    label: 'Code Review',
+    agent: 'claude',
+    prompt: 'Request a code review of the implementation.',
+    position: { x: 1000, y: 0 },
+  },
+  {
+    id: 'step-finish',
+    skill: 'finishing-a-development-branch',
+    label: 'Finish Branch',
+    agent: 'claude',
+    prompt: 'Finish the development branch and prepare for merge.',
+    position: { x: 1250, y: 0 },
+  },
 ];
 
 const DEFAULT_EDGES: PipelineEdge[] = [
@@ -76,16 +122,20 @@ export class PipelineService {
     const now = Date.now();
     const id = nanoid(12);
 
-    const row = this.db.insert(pipelines).values({
-      id,
-      name: input.name,
-      description: input.description ?? '',
-      steps: JSON.stringify(input.steps),
-      edges: JSON.stringify(input.edges),
-      isDefault: input.isDefault ? 1 : 0,
-      createdAt: now,
-      updatedAt: now,
-    }).returning().get();
+    const row = this.db
+      .insert(pipelines)
+      .values({
+        id,
+        name: input.name,
+        description: input.description ?? '',
+        steps: JSON.stringify(input.steps),
+        edges: JSON.stringify(input.edges),
+        isDefault: input.isDefault ? 1 : 0,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
 
     return rowToPipeline(row);
   }
@@ -107,7 +157,9 @@ export class PipelineService {
 
     this.db.update(pipelines).set(setValues).where(eq(pipelines.id, id)).run();
 
-    return this.get(id)!;
+    const result = this.get(id);
+    if (!result) throw new Error(`Pipeline ${id} not found after update`);
+    return result;
   }
 
   delete(id: string): void {
@@ -125,7 +177,8 @@ export class PipelineService {
 
     return this.create({
       name: 'Superpowers Workflow',
-      description: 'Default workflow based on the superpowers skill set: brainstorm, worktree, plan, implement, review, finish.',
+      description:
+        'Default workflow based on the superpowers skill set: brainstorm, worktree, plan, implement, review, finish.',
       steps: DEFAULT_STEPS,
       edges: DEFAULT_EDGES,
       isDefault: true,

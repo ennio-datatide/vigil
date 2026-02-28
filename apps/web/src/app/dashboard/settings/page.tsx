@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTelegramSettingsQuery, useSaveTelegramSettings, useTestTelegram } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import { useSaveTelegramSettings, useTelegramSettingsQuery, useTestTelegram } from '@/lib/api';
 import { useToast } from '@/lib/stores/toast-store';
 
 const EVENT_OPTIONS = [
@@ -41,9 +41,7 @@ export default function SettingsPage() {
   }, [telegram]);
 
   const toggleEvent = (key: string) => {
-    setEvents((prev) =>
-      prev.includes(key) ? prev.filter((e) => e !== key) : [...prev, key],
-    );
+    setEvents((prev) => (prev.includes(key) ? prev.filter((e) => e !== key) : [...prev, key]));
   };
 
   const handleSave = () => {
@@ -71,19 +69,27 @@ export default function SettingsPage() {
 
       {/* Server Status */}
       <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">Server Status</h3>
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
+          Server Status
+        </h3>
         <div className="flex items-center gap-2">
-          <span className={`h-3 w-3 rounded-full ${isConnected ? 'bg-accent shadow-[0_0_6px_1px] shadow-accent/50' : 'bg-status-error'}`} />
+          <span
+            className={`h-3 w-3 rounded-full ${isConnected ? 'bg-accent shadow-[0_0_6px_1px] shadow-accent/50' : 'bg-status-error'}`}
+          />
           <span className="text-sm">{isConnected ? 'Connected' : 'Disconnected'}</span>
         </div>
         {!isConnected && (
-          <p className="mt-2 text-xs text-text-muted">Run <code className="font-mono text-accent">praefectus up</code> to start the server.</p>
+          <p className="mt-2 text-xs text-text-muted">
+            Run <code className="font-mono text-accent">praefectus up</code> to start the server.
+          </p>
         )}
       </section>
 
       {/* Telegram Notifications */}
       <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-text-muted">Telegram Notifications</h3>
+        <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-text-muted">
+          Telegram Notifications
+        </h3>
         <div className="space-y-4">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -148,6 +154,7 @@ export default function SettingsPage() {
 
           <div className="flex gap-3 pt-2">
             <button
+              type="button"
               onClick={handleSave}
               disabled={saveMutation.isPending}
               className="btn-press rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
@@ -155,6 +162,7 @@ export default function SettingsPage() {
               {saveMutation.isPending ? 'Saving...' : 'Save'}
             </button>
             <button
+              type="button"
               onClick={handleTest}
               disabled={testMutation.isPending || !enabled}
               className="btn-press rounded-lg border border-border-subtle px-4 py-2 text-sm text-text-muted hover:bg-surface-hover transition-colors disabled:opacity-50"
@@ -167,32 +175,49 @@ export default function SettingsPage() {
 
       {/* Remote Access */}
       <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">Remote Access</h3>
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
+          Remote Access
+        </h3>
         <p className="mb-3 text-sm text-text-muted">
           Access this dashboard from your phone or another device on your network:
         </p>
         <div className="space-y-2 font-mono text-xs">
           <div className="rounded-lg bg-bg p-3 border border-border-subtle">
             <span className="text-text-muted">Local network: </span>
-            <span className="text-accent select-all">http://{typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:{typeof window !== 'undefined' ? window.location.port : '3000'}</span>
+            <span className="text-accent select-all">
+              http://{typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:
+              {typeof window !== 'undefined' ? window.location.port : '3000'}
+            </span>
           </div>
           <div className="rounded-lg bg-bg p-3 border border-border-subtle">
             <span className="text-text-muted">Tailscale: </span>
-            <span className="text-text">Run <code className="text-accent">tailscale ip -4</code> to get your Tailscale IP, then visit <code className="text-accent">http://&lt;tailscale-ip&gt;:3000</code></span>
+            <span className="text-text">
+              Run <code className="text-accent">tailscale ip -4</code> to get your Tailscale IP,
+              then visit <code className="text-accent">http://&lt;tailscale-ip&gt;:3000</code>
+            </span>
           </div>
         </div>
         <p className="mt-3 text-xs text-text-muted">
-          Tip: Tailscale works from anywhere, not just your home WiFi. Install Tailscale on your phone and connect with the same account.
+          Tip: Tailscale works from anywhere, not just your home WiFi. Install Tailscale on your
+          phone and connect with the same account.
         </p>
       </section>
 
       {/* CLI Auth */}
       <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">Agent Authentication</h3>
-        <p className="mb-3 text-sm text-text-muted">If agents report auth errors, re-authenticate with:</p>
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
+          Agent Authentication
+        </h3>
+        <p className="mb-3 text-sm text-text-muted">
+          If agents report auth errors, re-authenticate with:
+        </p>
         <div className="space-y-2 font-mono text-xs">
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">praefectus auth claude</div>
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">praefectus auth codex</div>
+          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">
+            praefectus auth claude
+          </div>
+          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">
+            praefectus auth codex
+          </div>
         </div>
       </section>
     </div>

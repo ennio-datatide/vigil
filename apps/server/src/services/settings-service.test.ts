@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createDb, initializeSchema } from '../db/client.js';
 import { SettingsService } from './settings-service.js';
-import { mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 describe('SettingsService', () => {
   let service: SettingsService;
@@ -31,7 +31,13 @@ describe('SettingsService', () => {
   });
 
   it('should get and set Telegram config', () => {
-    const config = { botToken: 'tok', chatId: '123', dashboardUrl: 'http://localhost', enabled: true, events: ['error'] };
+    const config = {
+      botToken: 'tok',
+      chatId: '123',
+      dashboardUrl: 'http://localhost',
+      enabled: true,
+      events: ['error'],
+    };
     service.setTelegramConfig(config);
     expect(service.getTelegramConfig()).toEqual(config);
   });

@@ -44,14 +44,22 @@ const CONFIG: Record<string, { label: string; dotClass: string; pillClass: strin
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const cfg = CONFIG[status] ?? { label: status, dotClass: 'bg-text-muted', pillClass: 'bg-text-muted/10 text-text-muted' };
+  const cfg = CONFIG[status] ?? {
+    label: status,
+    dotClass: 'bg-text-muted',
+    pillClass: 'bg-text-muted/10 text-text-muted',
+  };
 
   return (
     <Tooltip text={cfg.label}>
-      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.pillClass}`}>
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.pillClass}`}
+      >
         <span
           className={`h-1.5 w-1.5 rounded-full ${cfg.dotClass} ${
-            status === 'running' ? 'animate-pulse shadow-[0_0_6px_1px] shadow-status-working/50' : ''
+            status === 'running'
+              ? 'animate-pulse shadow-[0_0_6px_1px] shadow-status-working/50'
+              : ''
           }`}
         />
         {cfg.label}

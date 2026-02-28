@@ -1,17 +1,17 @@
 // Re-export shared types
 export type {
-  Session,
-  SessionStatusType,
   AgentTypeType,
-  SessionRoleType,
-  WsMessage,
-  NotificationMessage,
-  CreateSessionInputType,
-  Pipeline,
-  PipelineStep,
-  PipelineEdge,
   CreatePipelineInputType,
+  CreateSessionInputType,
+  NotificationMessage,
+  Pipeline,
+  PipelineEdge,
+  PipelineStep,
+  Session,
+  SessionRoleType,
+  SessionStatusType,
   UpdatePipelineInputType,
+  WsMessage,
 } from '@praefectus/shared';
 
 // Frontend-specific types

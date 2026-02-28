@@ -10,12 +10,7 @@ export interface PtyCreateOptions {
 export class PtyManager {
   private ptys = new Map<string, IPty>();
 
-  create(
-    sessionId: string,
-    cmd: string,
-    args: string[],
-    options: PtyCreateOptions,
-  ): IPty {
+  create(sessionId: string, cmd: string, args: string[], options: PtyCreateOptions): IPty {
     // Kill existing PTY for this session if any
     if (this.ptys.has(sessionId)) {
       this.kill(sessionId);
@@ -26,7 +21,7 @@ export class PtyManager {
       cols: options.cols ?? 120,
       rows: options.rows ?? 30,
       cwd: options.cwd,
-      env: options.env as Record<string, string> ?? process.env as Record<string, string>,
+      env: (options.env as Record<string, string>) ?? (process.env as Record<string, string>),
     });
 
     this.ptys.set(sessionId, ptyProcess);

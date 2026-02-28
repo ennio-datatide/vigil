@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('E2E: Session lifecycle', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-e2e-test-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-e2e-test-${Date.now()}` });
 
     await app.ready();
   });
@@ -43,7 +43,7 @@ describe('E2E: Session lifecycle', () => {
     const listRes = await app.inject({ method: 'GET', url: '/api/sessions' });
     expect(listRes.statusCode).toBe(200);
     const sessions = listRes.json();
-    expect(sessions.some((s: any) => s.id === session.id)).toBe(true);
+    expect(sessions.some((s: Record<string, unknown>) => s.id === session.id)).toBe(true);
 
     // 5. Get session by ID
     const getRes = await app.inject({ method: 'GET', url: `/api/sessions/${session.id}` });
@@ -62,13 +62,16 @@ describe('E2E: Session lifecycle', () => {
   it('should post events via hook endpoint', async () => {
     // Seed a session for the event to reference
     const { sessions } = await import('../db/schema.js');
-    app.db.insert(sessions).values({
-      id: 'test-session',
-      projectPath: '/tmp/test-project',
-      prompt: 'event test',
-      status: 'running',
-      agentType: 'claude',
-    }).run();
+    app.db
+      .insert(sessions)
+      .values({
+        id: 'test-session',
+        projectPath: '/tmp/test-project',
+        prompt: 'event test',
+        status: 'running',
+        agentType: 'claude',
+      })
+      .run();
 
     const eventRes = await app.inject({
       method: 'POST',

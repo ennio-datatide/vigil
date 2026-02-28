@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCreateSession, useProjectsQuery, useDirsQuery, usePipelinesQuery } from '@/lib/api';
+import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCreateSession, useDirsQuery, usePipelinesQuery, useProjectsQuery } from '@/lib/api';
 import { useToast } from '@/lib/stores/toast-store';
 
 function PathInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -41,12 +41,15 @@ function PathInput({ value, onChange }: { value: string; onChange: (v: string) =
 
   const showDropdown = focused && suggestions.length > 0;
 
-  const select = useCallback((path: string) => {
-    // Append / so the user can keep drilling down
-    onChange(path.endsWith('/') ? path : path + '/');
-    setHighlightIdx(-1);
-    inputRef.current?.focus();
-  }, [onChange]);
+  const select = useCallback(
+    (path: string) => {
+      // Append / so the user can keep drilling down
+      onChange(path.endsWith('/') ? path : `${path}/`);
+      setHighlightIdx(-1);
+      inputRef.current?.focus();
+    },
+    [onChange],
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showDropdown) return;
@@ -76,7 +79,9 @@ function PathInput({ value, onChange }: { value: string; onChange: (v: string) =
   }, [highlightIdx]);
 
   // Reset highlight when suggestions change
-  useEffect(() => { setHighlightIdx(-1); }, [debouncedPrefix]);
+  useEffect(() => {
+    setHighlightIdx(-1);
+  }, []);
 
   return (
     <div className="relative">
@@ -109,9 +114,7 @@ function PathInput({ value, onChange }: { value: string; onChange: (v: string) =
               }`}
             >
               <span className="font-medium text-text">{s.label}</span>
-              {s.label !== s.path && (
-                <span className="ml-2 text-xs text-text-muted">{s.path}</span>
-              )}
+              {s.label !== s.path && <span className="ml-2 text-xs text-text-muted">{s.path}</span>}
             </li>
           ))}
         </ul>
@@ -136,7 +139,13 @@ function NewSessionModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const cleanPath = projectPath.replace(/\/+$/, '');
     createSession.mutate(
-      { projectPath: cleanPath, prompt, skill: skill || undefined, pipelineId: pipelineId || undefined, skipPermissions: skipPermissions || undefined },
+      {
+        projectPath: cleanPath,
+        prompt,
+        skill: skill || undefined,
+        pipelineId: pipelineId || undefined,
+        skipPermissions: skipPermissions || undefined,
+      },
       {
         onSuccess: (session) => {
           onClose();
@@ -181,7 +190,9 @@ function NewSessionModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-text-faint">Skill (optional)</label>
+            <label className="mb-1 block text-sm font-medium text-text-faint">
+              Skill (optional)
+            </label>
             <input
               type="text"
               value={skill}
@@ -192,7 +203,9 @@ function NewSessionModal({ onClose }: { onClose: () => void }) {
           </div>
           {pipelines && pipelines.length > 0 && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-text-faint">Pipeline (optional)</label>
+              <label className="mb-1 block text-sm font-medium text-text-faint">
+                Pipeline (optional)
+              </label>
               <select
                 value={pipelineId}
                 onChange={(e) => setPipelineId(e.target.value)}
@@ -260,24 +273,44 @@ export function NewSession() {
     <>
       {/* Desktop: fixed button in sidebar area (w-56 = 14rem sidebar) */}
       <button
+        type="button"
         onClick={() => setOpen(true)}
         className="btn-press glass fixed bottom-4 left-3 z-40 hidden w-[calc(14rem-1.5rem)] items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10 md:flex"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
         New Session
-        <kbd className="ml-auto rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">&#8984;N</kbd>
+        <kbd className="ml-auto rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
+          &#8984;N
+        </kbd>
       </button>
 
       {/* Mobile: FAB bottom-right — hidden on session pages to avoid overlapping terminal input */}
       <button
+        type="button"
         onClick={() => setOpen(true)}
         className={`btn-press fixed bottom-20 right-4 z-50 h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/25 hover:bg-accent-hover transition-colors md:hidden ${hideFloatingButton ? 'hidden' : 'flex'}`}
         aria-label="New session"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
@@ -289,4 +322,3 @@ export function NewSession() {
     </>
   );
 }
-

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb, initializeSchema, type Db } from '../db/client.js';
+import type { PipelineEdge, PipelineStep } from '@praefectus/shared';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { createDb, type Db, initializeSchema } from '../db/client.js';
 import { PipelineService } from './pipeline-service.js';
-import type { PipelineStep, PipelineEdge } from '@praefectus/shared';
 
 function makeTestDb(): Db {
   const { sqlite, db } = createDb(':memory:');
@@ -65,9 +65,9 @@ describe('PipelineService', () => {
     const fetched = service.get(created.id);
 
     expect(fetched).not.toBeNull();
-    expect(fetched!.steps).toEqual(steps);
-    expect(fetched!.edges).toEqual(edges);
-    expect(fetched!.name).toBe('My Pipeline');
+    expect(fetched?.steps).toEqual(steps);
+    expect(fetched?.edges).toEqual(edges);
+    expect(fetched?.name).toBe('My Pipeline');
   });
 
   it('get() returns null for nonexistent id', () => {
@@ -118,8 +118,8 @@ describe('PipelineService', () => {
 
     const def = service.getDefault();
     expect(def).not.toBeNull();
-    expect(def!.name).toBe('Default One');
-    expect(def!.isDefault).toBe(true);
+    expect(def?.name).toBe('Default One');
+    expect(def?.isDefault).toBe(true);
   });
 
   it('getDefault() returns null when no default exists', () => {
@@ -170,11 +170,11 @@ describe('PipelineService', () => {
 
     const next1 = service.getNextStep(pipeline.id, 0);
     expect(next1).not.toBeNull();
-    expect(next1!.id).toBe('s2');
+    expect(next1?.id).toBe('s2');
 
     const next2 = service.getNextStep(pipeline.id, 1);
     expect(next2).not.toBeNull();
-    expect(next2!.id).toBe('s3');
+    expect(next2?.id).toBe('s3');
   });
 
   it('getNextStep() returns null for last step', () => {

@@ -1,6 +1,6 @@
+import { HookPayload } from '@praefectus/shared';
 import type { FastifyPluginAsync } from 'fastify';
 import { events } from '../db/schema.js';
-import { HookPayload } from '@praefectus/shared';
 
 const eventsRoute: FastifyPluginAsync = async (app) => {
   app.post('/events', async (request, reply) => {
@@ -15,13 +15,16 @@ const eventsRoute: FastifyPluginAsync = async (app) => {
     const now = Date.now();
 
     // Persist event
-    app.db.insert(events).values({
-      sessionId: session_id,
-      eventType,
-      toolName,
-      payload: JSON.stringify(data),
-      timestamp: now,
-    }).run();
+    app.db
+      .insert(events)
+      .values({
+        sessionId: session_id,
+        eventType,
+        toolName,
+        payload: JSON.stringify(data),
+        timestamp: now,
+      })
+      .run();
 
     // Emit to event bus
     app.eventBus.emit('hook_event', {

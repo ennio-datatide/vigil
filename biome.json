@@ -6,13 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "**",
-      "!dist/**",
-      "!.next/**",
-      "!.turbo/**",
-      "!package-lock.json"
-    ]
+    "includes": ["**", "!dist", "!.next", "!.turbo", "!package-lock.json"]
   },
   "assist": {
     "enabled": true,
@@ -28,6 +22,18 @@
     "indentWidth": 2,
     "lineWidth": 100
   },
+  "css": {
+    "parser": {
+      "cssModules": true,
+      "tailwindDirectives": true
+    },
+    "linter": {
+      "enabled": false
+    },
+    "formatter": {
+      "enabled": false
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
@@ -41,12 +47,17 @@
       "complexity": {
         "noForEach": "off"
       },
+      "a11y": {
+        "noSvgWithoutTitle": "off",
+        "noLabelWithoutControl": "off"
+      },
       "style": {
         "noNonNullAssertion": "warn",
         "useImportType": "warn"
       },
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "warn",
+        "noArrayIndexKey": "off"
       }
     }
   }

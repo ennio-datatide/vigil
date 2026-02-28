@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { sessions } from '../db/schema.js';
 import type { Db } from '../db/client.js';
+import { sessions } from '../db/schema.js';
 
 export class RecoveryService {
   constructor(private db: Db) {}
@@ -17,7 +17,8 @@ export class RecoveryService {
       .all();
 
     for (const session of runningSessions) {
-      this.db.update(sessions)
+      this.db
+        .update(sessions)
         .set({ status: 'interrupted', endedAt: Date.now(), exitReason: 'error' })
         .where(eq(sessions.id, session.id))
         .run();

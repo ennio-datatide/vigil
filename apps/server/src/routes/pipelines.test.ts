@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('pipeline routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-pipelines-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-pipelines-${Date.now()}` });
   });
 
   afterAll(async () => {
@@ -44,7 +44,14 @@ describe('pipeline routes', () => {
       payload: {
         name: 'Custom Pipeline',
         steps: [
-          { id: 's1', skill: 'brainstorming', label: 'Brainstorm', agent: 'claude', prompt: 'Think', position: { x: 0, y: 0 } },
+          {
+            id: 's1',
+            skill: 'brainstorming',
+            label: 'Brainstorm',
+            agent: 'claude',
+            prompt: 'Think',
+            position: { x: 0, y: 0 },
+          },
         ],
         edges: [],
       },
@@ -73,7 +80,14 @@ describe('pipeline routes', () => {
       payload: {
         name: 'To Update',
         steps: [
-          { id: 's1', skill: 'brainstorming', label: 'Brainstorm', agent: 'claude', prompt: 'Think', position: { x: 0, y: 0 } },
+          {
+            id: 's1',
+            skill: 'brainstorming',
+            label: 'Brainstorm',
+            agent: 'claude',
+            prompt: 'Think',
+            position: { x: 0, y: 0 },
+          },
         ],
         edges: [],
       },
@@ -105,7 +119,14 @@ describe('pipeline routes', () => {
       payload: {
         name: 'To Delete',
         steps: [
-          { id: 's1', skill: 'brainstorming', label: 'Brainstorm', agent: 'claude', prompt: 'Think', position: { x: 0, y: 0 } },
+          {
+            id: 's1',
+            skill: 'brainstorming',
+            label: 'Brainstorm',
+            agent: 'claude',
+            prompt: 'Think',
+            position: { x: 0, y: 0 },
+          },
         ],
         edges: [],
       },
@@ -128,7 +149,9 @@ describe('pipeline routes', () => {
 
   it('DELETE should prevent deleting the only pipeline', async () => {
     // Create a fresh app with only the seeded default
-    const freshApp = await buildApp({ praefectusHome: '/tmp/pf-test-pipelines-fresh-' + Date.now() });
+    const freshApp = await buildApp({
+      praefectusHome: `/tmp/pf-test-pipelines-fresh-${Date.now()}`,
+    });
     const list = await freshApp.inject({ method: 'GET', url: '/api/pipelines' });
     const defaultId = list.json()[0].id;
 

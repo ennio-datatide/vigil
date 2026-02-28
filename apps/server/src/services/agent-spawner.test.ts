@@ -1,15 +1,15 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { PraefectusConfig } from '../config.js';
 import { AgentSpawner } from './agent-spawner.js';
-import { WorktreeManager } from './worktree-manager.js';
-import { SkillManager } from './skill-manager.js';
+import { EventBus } from './event-bus.js';
 import { OutputManager } from './output-manager.js';
 import { PtyManager } from './pty-manager.js';
-import { EventBus } from './event-bus.js';
-import type { PraefectusConfig } from '../config.js';
+import { SkillManager } from './skill-manager.js';
+import { WorktreeManager } from './worktree-manager.js';
 
 describe('AgentSpawner', () => {
   let repoDir: string;
@@ -44,7 +44,14 @@ describe('AgentSpawner', () => {
     outputManager = new OutputManager();
     ptyManager = new PtyManager();
     const eventBus = new EventBus();
-    spawner = new AgentSpawner(worktreeManager, skillManager, config, outputManager, ptyManager, eventBus);
+    spawner = new AgentSpawner(
+      worktreeManager,
+      skillManager,
+      config,
+      outputManager,
+      ptyManager,
+      eventBus,
+    );
   });
 
   afterAll(async () => {
@@ -105,17 +112,38 @@ describe('AgentSpawner', () => {
 
   it('should build correct claude args without skill', () => {
     const args = spawner.buildClaudeArgs('Add auth middleware');
-    expect(args).toEqual(['-p', 'Add auth middleware', '--output-format', 'stream-json', '--include-partial-messages', '--verbose']);
+    expect(args).toEqual([
+      '-p',
+      'Add auth middleware',
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+    ]);
   });
 
   it('should build correct claude args with skill', () => {
     const args = spawner.buildClaudeArgs('Review code', 'review');
-    expect(args).toEqual(['-p', '/review Review code', '--output-format', 'stream-json', '--include-partial-messages', '--verbose']);
+    expect(args).toEqual([
+      '-p',
+      '/review Review code',
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+    ]);
   });
 
   it('should pass prompt with special characters safely as args', () => {
     const args = spawner.buildClaudeArgs("Don't break things; rm -rf /");
-    expect(args).toEqual(['-p', "Don't break things; rm -rf /", '--output-format', 'stream-json', '--include-partial-messages', '--verbose']);
+    expect(args).toEqual([
+      '-p',
+      "Don't break things; rm -rf /",
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+    ]);
   });
 
   it('should report session as not alive when no process exists', () => {
@@ -131,9 +159,9 @@ describe('AgentSpawner', () => {
     it('should capture git metadata from a git repo', () => {
       const meta = spawner.captureGitMetadata(repoDir);
       expect(meta).not.toBeNull();
-      expect(meta!.branch).toBe('master');
-      expect(meta!.commitHash).toMatch(/^[a-f0-9]+$/);
-      expect(meta!.repoName).toBeDefined();
+      expect(meta?.branch).toBe('master');
+      expect(meta?.commitHash).toMatch(/^[a-f0-9]+$/);
+      expect(meta?.repoName).toBeDefined();
     });
 
     it('should return null for a non-git directory', () => {
@@ -146,7 +174,7 @@ describe('AgentSpawner', () => {
       const meta = spawner.captureGitMetadata(repoDir);
       expect(meta).not.toBeNull();
       // Our test repo has no remote, so remoteUrl should be null
-      expect(meta!.remoteUrl).toBeNull();
+      expect(meta?.remoteUrl).toBeNull();
     });
   });
 });

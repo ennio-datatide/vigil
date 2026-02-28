@@ -1,13 +1,20 @@
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
-import { join, dirname } from 'node:path';
-import { mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, createWriteStream } from 'node:fs';
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import {
+  chmodSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PraefectusConfig } from '../config.js';
-import { WorktreeManager } from './worktree-manager.js';
-import { SkillManager } from './skill-manager.js';
+import type { EventBus } from './event-bus.js';
 import type { OutputManager } from './output-manager.js';
 import type { PtyManager } from './pty-manager.js';
-import type { EventBus } from './event-bus.js';
+import type { SkillManager } from './skill-manager.js';
+import type { WorktreeManager } from './worktree-manager.js';
 
 export interface GitMetadata {
   repoName: string;
@@ -51,7 +58,7 @@ function extractDisplayText(jsonLine: string): string | null {
         .map((c: { text: string }) => c.text);
       if (textParts.length > 0) {
         const text = textParts.join('');
-        const display = text.length > 500 ? text.substring(0, 500) + '...' : text;
+        const display = text.length > 500 ? `${text.substring(0, 500)}...` : text;
         return `${display}\r\n`;
       }
     }
@@ -132,18 +139,19 @@ export class AgentSpawner {
       stdoutBuffer += chunk.toString();
 
       // Process complete lines
-      let newlineIdx: number;
-      while ((newlineIdx = stdoutBuffer.indexOf('\n')) !== -1) {
+      let newlineIdx: number = stdoutBuffer.indexOf('\n');
+      while (newlineIdx !== -1) {
         const line = stdoutBuffer.substring(0, newlineIdx).trim();
         stdoutBuffer = stdoutBuffer.substring(newlineIdx + 1);
 
-        if (!line) continue;
-
-        const displayText = extractDisplayText(line);
-        if (displayText) {
-          logStream.write(displayText);
-          this.outputManager.append(sessionId, displayText);
+        if (line) {
+          const displayText = extractDisplayText(line);
+          if (displayText) {
+            logStream.write(displayText);
+            this.outputManager.append(sessionId, displayText);
+          }
         }
+        newlineIdx = stdoutBuffer.indexOf('\n');
       }
     });
 
@@ -174,13 +182,20 @@ export class AgentSpawner {
       this.onExit?.(sessionId, 1);
     });
 
-    return { worktreePath: cwd, pid: child.pid! };
+    return { worktreePath: cwd, pid: child.pid ?? 0 };
   }
 
   /** Build args array for claude -p with streaming JSON output. */
   buildClaudeArgs(prompt: string, skill?: string): string[] {
     const fullPrompt = skill ? `/${skill} ${prompt}` : prompt;
-    return ['-p', fullPrompt, '--output-format', 'stream-json', '--include-partial-messages', '--verbose'];
+    return [
+      '-p',
+      fullPrompt,
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+    ];
   }
 
   async spawnInteractive(params: {
@@ -192,7 +207,8 @@ export class AgentSpawner {
     cols?: number;
     rows?: number;
   }): Promise<{ worktreePath: string; gitMetadata: GitMetadata | null }> {
-    const { sessionId, projectPath, prompt, continueInWorktree, skipPermissions, cols, rows } = params;
+    const { sessionId, projectPath, prompt, continueInWorktree, skipPermissions, cols, rows } =
+      params;
 
     try {
       // 1. Determine cwd: reuse worktree for resume, create new for fresh session
@@ -221,9 +237,7 @@ export class AgentSpawner {
       const gitMetadata = this.captureGitMetadata(projectPath);
 
       // 4. Build args: --continue for resume, --verbose for fresh
-      const args: string[] = continueInWorktree
-        ? ['--continue', '--verbose']
-        : ['--verbose'];
+      const args: string[] = continueInWorktree ? ['--continue', '--verbose'] : ['--verbose'];
 
       if (skipPermissions) {
         args.push('--dangerously-skip-permissions');
@@ -258,15 +272,16 @@ export class AgentSpawner {
       let promptSent = false;
 
       // Fallback: if Claude's UI readiness isn't detected within 15s, force-send prompt
-      const readyFallback = prompt && !continueInWorktree
-        ? setTimeout(() => {
-            if (!promptSent && this.ptyManager.isAlive(sessionId)) {
-              readyForPrompt = true;
-              this.sendPromptToPty(sessionId, prompt);
-              promptSent = true;
-            }
-          }, 15_000)
-        : null;
+      const readyFallback =
+        prompt && !continueInWorktree
+          ? setTimeout(() => {
+              if (!promptSent && this.ptyManager.isAlive(sessionId)) {
+                readyForPrompt = true;
+                this.sendPromptToPty(sessionId, prompt);
+                promptSent = true;
+              }
+            }, 15_000)
+          : null;
 
       ptyProcess.onData((data: string) => {
         logStream.write(data);
@@ -312,9 +327,10 @@ export class AgentSpawner {
         // Notify terminal viewers that the agent process has exited
         // exitCode may be null (e.g. killed by signal) — treat as non-zero
         const code = exitCode ?? 1;
-        const exitMsg = code === 0
-          ? '\r\n\x1b[33m[Agent exited normally]\x1b[0m\r\n'
-          : `\r\n\x1b[31m[Agent exited with code ${code}]\x1b[0m\r\n`;
+        const exitMsg =
+          code === 0
+            ? '\r\n\x1b[33m[Agent exited normally]\x1b[0m\r\n'
+            : `\r\n\x1b[31m[Agent exited with code ${code}]\x1b[0m\r\n`;
         this.outputManager.append(sessionId, exitMsg);
         logStream.write(exitMsg);
         logStream.end();
@@ -346,12 +362,15 @@ export class AgentSpawner {
         execSync(cmd, { cwd: projectPath, timeout: 5000 }).toString().trim();
 
       return {
-        repoName: exec('git rev-parse --show-toplevel').split('/').pop()!,
+        repoName: exec('git rev-parse --show-toplevel').split('/').pop() ?? '',
         branch: exec('git rev-parse --abbrev-ref HEAD'),
         commitHash: exec('git rev-parse --short HEAD'),
         remoteUrl: (() => {
-          try { return exec('git remote get-url origin'); }
-          catch { return null; }
+          try {
+            return exec('git remote get-url origin');
+          } catch {
+            return null;
+          }
         })(),
       };
     } catch {

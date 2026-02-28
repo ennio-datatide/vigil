@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { sessions } from '../db/schema.js';
 
@@ -6,7 +6,7 @@ describe('terminal WebSocket route', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: '/tmp/pf-test-terminal-ws-' + Date.now() });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-terminal-ws-${Date.now()}` });
   });
 
   afterAll(async () => {
@@ -41,32 +41,38 @@ describe('terminal WebSocket route', () => {
     });
 
     it('should seed a session without tmuxSession for validation testing', () => {
-      app.db.insert(sessions).values({
-        id: 'sess-no-tmux',
-        projectPath: '/tmp/test-project',
-        prompt: 'test no tmux',
-        status: 'queued',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'sess-no-tmux',
+          projectPath: '/tmp/test-project',
+          prompt: 'test no tmux',
+          status: 'queued',
+        })
+        .run();
 
       const result = app.db.select().from(sessions).all();
       const found = result.find((s) => s.id === 'sess-no-tmux');
       expect(found).toBeDefined();
-      expect(found!.tmuxSession).toBeNull();
+      expect(found?.tmuxSession).toBeNull();
     });
 
     it('should seed a session with a pid for connection testing', () => {
-      app.db.insert(sessions).values({
-        id: 'sess-with-pid',
-        projectPath: '/tmp/test-project',
-        prompt: 'test with pid',
-        status: 'running',
-        tmuxSession: '12345',
-      }).run();
+      app.db
+        .insert(sessions)
+        .values({
+          id: 'sess-with-pid',
+          projectPath: '/tmp/test-project',
+          prompt: 'test with pid',
+          status: 'running',
+          tmuxSession: '12345',
+        })
+        .run();
 
       const result = app.db.select().from(sessions).all();
       const found = result.find((s) => s.id === 'sess-with-pid');
       expect(found).toBeDefined();
-      expect(found!.tmuxSession).toBe('12345');
+      expect(found?.tmuxSession).toBe('12345');
     });
   });
 

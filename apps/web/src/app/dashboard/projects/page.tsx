@@ -1,8 +1,8 @@
 'use client';
 
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useProjectsQuery } from '@/lib/api';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function ProjectsPage() {
   const { data: projects, isLoading } = useProjectsQuery();
@@ -93,6 +93,7 @@ export default function ProjectsPage() {
                 <span className="ml-2 text-xs text-text-muted">{project.path}</span>
               </div>
               <button
+                type="button"
                 onClick={() => removeProject.mutate(project.path)}
                 disabled={removeProject.isPending}
                 className="min-h-[44px] btn-press rounded-lg px-3 py-2 text-xs text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"

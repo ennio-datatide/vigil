@@ -1,10 +1,10 @@
-import { eq, and, ne } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { sessions, chainRules } from '../db/schema.js';
 import type { Db } from '../db/client.js';
-import type { EventBus, BusEvents } from './event-bus.js';
-import type { PipelineService } from './pipeline-service.js';
+import { chainRules, sessions } from '../db/schema.js';
 import { updateSessionStatus } from '../utils/update-session-status.js';
+import type { BusEvents, EventBus } from './event-bus.js';
+import type { PipelineService } from './pipeline-service.js';
 
 const AUTH_KEYWORDS = ['auth', 'token', 'expired', 'unauthorized', 'login'];
 
@@ -74,13 +74,9 @@ export class SessionManager {
 
   handleProcessExit(sessionId: string, code: number | null): void {
     // Guard against calls after DB close (e.g., during shutdown)
-    let session;
+    let session: typeof sessions.$inferSelect | undefined;
     try {
-      session = this.db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.id, sessionId))
-        .get();
+      session = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
     } catch {
       return;
     }
@@ -126,11 +122,7 @@ export class SessionManager {
         .where(eq(sessions.id, sessionId))
         .run();
 
-      const session = this.db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.id, sessionId))
-        .get();
+      const session = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
 
       if (session) {
         const otherRunningSessions = this.db
@@ -147,7 +139,9 @@ export class SessionManager {
 
         for (const other of otherRunningSessions) {
           updateSessionStatus(this.db, this.bus, other.id, {
-            status: 'auth_required', endedAt: Date.now(), exitReason: 'error',
+            status: 'auth_required',
+            endedAt: Date.now(),
+            exitReason: 'error',
           });
         }
 
@@ -196,11 +190,7 @@ export class SessionManager {
   }
 
   private processChainRules(sessionId: string): void {
-    const session = this.db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.id, sessionId))
-      .get();
+    const session = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
 
     if (!session) {
       return;
@@ -208,22 +198,28 @@ export class SessionManager {
 
     // Pipeline-aware chaining: if this session belongs to a pipeline, advance to next step
     if (session.pipelineId && session.pipelineStepIndex !== null && this._pipelineService) {
-      const nextStep = this._pipelineService.getNextStep(session.pipelineId, session.pipelineStepIndex);
+      const nextStep = this._pipelineService.getNextStep(
+        session.pipelineId,
+        session.pipelineStepIndex,
+      );
       if (nextStep) {
         const followUpId = nanoid(12);
         const nextIndex = session.pipelineStepIndex + 1;
 
-        this.db.insert(sessions).values({
-          id: followUpId,
-          projectPath: session.projectPath,
-          prompt: nextStep.prompt,
-          status: 'queued',
-          agentType: nextStep.agent,
-          parentId: sessionId,
-          skillsUsed: JSON.stringify([nextStep.skill]),
-          pipelineId: session.pipelineId,
-          pipelineStepIndex: nextIndex,
-        }).run();
+        this.db
+          .insert(sessions)
+          .values({
+            id: followUpId,
+            projectPath: session.projectPath,
+            prompt: nextStep.prompt,
+            status: 'queued',
+            agentType: nextStep.agent,
+            parentId: sessionId,
+            skillsUsed: JSON.stringify([nextStep.skill]),
+            pipelineId: session.pipelineId,
+            pipelineStepIndex: nextIndex,
+          })
+          .run();
 
         this.bus.emit('session_update', { sessionId: followUpId, status: 'queued' });
       }
@@ -242,15 +238,18 @@ export class SessionManager {
       if (rule.sourceSkill === null || parsedSkills.includes(rule.sourceSkill)) {
         const followUpId = nanoid(12);
 
-        this.db.insert(sessions).values({
-          id: followUpId,
-          projectPath: session.projectPath,
-          prompt: `Run skill: ${rule.targetSkill}`,
-          status: 'queued',
-          agentType: session.agentType,
-          parentId: sessionId,
-          skillsUsed: JSON.stringify([rule.targetSkill]),
-        }).run();
+        this.db
+          .insert(sessions)
+          .values({
+            id: followUpId,
+            projectPath: session.projectPath,
+            prompt: `Run skill: ${rule.targetSkill}`,
+            status: 'queued',
+            agentType: session.agentType,
+            parentId: sessionId,
+            skillsUsed: JSON.stringify([rule.targetSkill]),
+          })
+          .run();
 
         this.bus.emit('session_update', { sessionId: followUpId, status: 'queued' });
       }

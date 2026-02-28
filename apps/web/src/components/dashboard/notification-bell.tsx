@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNotificationsQuery, useMarkNotificationRead } from '@/lib/api';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { useMarkNotificationRead, useNotificationsQuery } from '@/lib/api';
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -23,11 +23,21 @@ export function NotificationBell() {
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         className="btn-press relative rounded-lg p-2 text-text-muted hover:bg-surface-hover hover:text-text transition-colors"
         aria-label="Notifications"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
@@ -58,6 +68,7 @@ export function NotificationBell() {
               <div className="max-h-60 space-y-0.5 overflow-y-auto">
                 {notifications.map((n) => (
                   <button
+                    type="button"
                     key={n.id}
                     onClick={() => {
                       if (!n.readAt) markRead.mutate(n.id);
@@ -67,7 +78,9 @@ export function NotificationBell() {
                     }`}
                   >
                     <span className="flex items-start gap-2">
-                      {!n.readAt && <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+                      {!n.readAt && (
+                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                      )}
                       <span className={!n.readAt ? '' : 'pl-3.5'}>{n.message}</span>
                     </span>
                   </button>

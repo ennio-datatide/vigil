@@ -1,5 +1,5 @@
-import type { FastifyPluginAsync } from 'fastify';
 import { readdirSync } from 'node:fs';
+import type { FastifyPluginAsync } from 'fastify';
 
 const skillsRoute: FastifyPluginAsync = async (app) => {
   // List available skills by reading .md files from the skills directory

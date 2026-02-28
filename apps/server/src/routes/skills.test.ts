@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 
 describe('skills routes', () => {
-  const praefectusHome = '/tmp/pf-test-skills-' + Date.now();
+  const praefectusHome = `/tmp/pf-test-skills-${Date.now()}`;
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {

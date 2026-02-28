@@ -26,7 +26,9 @@ export async function ls(options: { all?: boolean }) {
       : sessions.filter((s) => !['completed', 'cancelled', 'error'].includes(s.status));
 
     if (filtered.length === 0) {
-      console.log(options.all ? 'No sessions found' : 'No active sessions. Use --all to see completed.');
+      console.log(
+        options.all ? 'No sessions found' : 'No active sessions. Use --all to see completed.',
+      );
       return;
     }
 
@@ -47,19 +49,21 @@ export async function ls(options: { all?: boolean }) {
     console.log('-'.repeat(header.length));
 
     for (const s of filtered) {
-      const truncatedPrompt = s.prompt.length > promptWidth
-        ? s.prompt.slice(0, promptWidth - 3) + '...'
-        : s.prompt;
-      const truncatedProject = s.projectPath.length > projectWidth
-        ? '...' + s.projectPath.slice(-(projectWidth - 3))
-        : s.projectPath;
+      const truncatedPrompt =
+        s.prompt.length > promptWidth ? `${s.prompt.slice(0, promptWidth - 3)}...` : s.prompt;
+      const truncatedProject =
+        s.projectPath.length > projectWidth
+          ? `...${s.projectPath.slice(-(projectWidth - 3))}`
+          : s.projectPath;
 
-      console.log([
-        s.id.padEnd(idWidth),
-        s.status.padEnd(statusWidth),
-        truncatedProject.padEnd(projectWidth),
-        truncatedPrompt.padEnd(promptWidth),
-      ].join('  '));
+      console.log(
+        [
+          s.id.padEnd(idWidth),
+          s.status.padEnd(statusWidth),
+          truncatedProject.padEnd(projectWidth),
+          truncatedPrompt.padEnd(promptWidth),
+        ].join('  '),
+      );
     }
   } catch {
     console.error('Could not reach Praefectus server. Is it running? Try: praefectus up');

@@ -1,5 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Session, CreateSessionInputType, Pipeline, CreatePipelineInputType, UpdatePipelineInputType, NotificationMessage } from './types';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type {
+  CreatePipelineInputType,
+  CreateSessionInputType,
+  NotificationMessage,
+  Pipeline,
+  Session,
+  UpdatePipelineInputType,
+} from './types';
 
 const API_BASE = ''; // Uses Next.js rewrites to proxy to Fastify
 
@@ -32,8 +39,7 @@ export function useCreateSession() {
 export function useCancelSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      fetchJson(`/api/sessions/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => fetchJson(`/api/sessions/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   });
 }
@@ -59,8 +65,7 @@ export function useRestartSession() {
 export function useRemoveSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      fetchJson(`/api/sessions/${id}/remove`, { method: 'DELETE' }),
+    mutationFn: (id: string) => fetchJson(`/api/sessions/${id}/remove`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   });
 }
@@ -78,8 +83,7 @@ export function useDirsQuery(prefix: string) {
 export function useProjectsQuery() {
   return useQuery({
     queryKey: ['projects'],
-    queryFn: () =>
-      fetchJson<{ path: string; name: string }[]>('/api/projects'),
+    queryFn: () => fetchJson<{ path: string; name: string }[]>('/api/projects'),
   });
 }
 
@@ -87,17 +91,14 @@ export function useNotificationsQuery(unreadOnly = true) {
   return useQuery({
     queryKey: ['notifications', { unreadOnly }],
     queryFn: () =>
-      fetchJson<NotificationMessage[]>(
-        `/api/notifications${unreadOnly ? '?unread=true' : ''}`,
-      ),
+      fetchJson<NotificationMessage[]>(`/api/notifications${unreadOnly ? '?unread=true' : ''}`),
   });
 }
 
 export function useMarkNotificationRead() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) =>
-      fetchJson(`/api/notifications/${id}/read`, { method: 'PATCH' }),
+    mutationFn: (id: number) => fetchJson(`/api/notifications/${id}/read`, { method: 'PATCH' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }
@@ -105,14 +106,15 @@ export function useMarkNotificationRead() {
 export function useTelegramSettingsQuery() {
   return useQuery({
     queryKey: ['telegram-settings'],
-    queryFn: () => fetchJson<{
-      configured: boolean;
-      botToken?: string;
-      chatId?: string;
-      dashboardUrl?: string;
-      enabled?: boolean;
-      events?: string[];
-    }>('/api/settings/telegram'),
+    queryFn: () =>
+      fetchJson<{
+        configured: boolean;
+        botToken?: string;
+        chatId?: string;
+        dashboardUrl?: string;
+        enabled?: boolean;
+        events?: string[];
+      }>('/api/settings/telegram'),
   });
 }
 
@@ -137,8 +139,7 @@ export function useSaveTelegramSettings() {
 
 export function useTestTelegram() {
   return useMutation({
-    mutationFn: () =>
-      fetchJson('/api/settings/telegram/test', { method: 'POST' }),
+    mutationFn: () => fetchJson('/api/settings/telegram/test', { method: 'POST' }),
   });
 }
 
@@ -188,8 +189,7 @@ export function useUpdatePipeline() {
 export function useDeletePipeline() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      fetchJson(`/api/pipelines/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => fetchJson(`/api/pipelines/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
   });
 }

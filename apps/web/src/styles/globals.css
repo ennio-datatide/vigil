@@ -43,8 +43,7 @@ body {
 /* Gradient background overlay — applied to dashboard root */
 .nebula-bg {
   background:
-    radial-gradient(ellipse at 80% 0%, hsl(250 30% 8%) 0%, transparent 60%),
-    var(--color-bg);
+    radial-gradient(ellipse at 80% 0%, hsl(250 30% 8%) 0%, transparent 60%), var(--color-bg);
 }
 
 /* Glassmorphism utility classes */
@@ -84,8 +83,13 @@ body {
 
 /* Running shimmer animation */
 @keyframes shimmer-left {
-  0%, 100% { box-shadow: inset 3px 0 8px -2px hsl(145 72% 50% / 0.3); }
-  50% { box-shadow: inset 3px 0 12px -1px hsl(145 72% 50% / 0.7); }
+  0%,
+  100% {
+    box-shadow: inset 3px 0 8px -2px hsl(145 72% 50% / 0.3);
+  }
+  50% {
+    box-shadow: inset 3px 0 12px -1px hsl(145 72% 50% / 0.7);
+  }
 }
 .glow-running-shimmer {
   animation: shimmer-left 2s ease-in-out infinite;
@@ -104,10 +108,12 @@ body {
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }
 

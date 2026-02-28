@@ -1,5 +1,5 @@
-import type { FastifyPluginAsync } from 'fastify';
 import { eq } from 'drizzle-orm';
+import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { projects } from '../db/schema.js';
 
@@ -22,11 +22,15 @@ const projectsRoute: FastifyPluginAsync = async (app) => {
     }
 
     const { path, name } = parsed.data;
-    const project = app.db.insert(projects).values({
-      path,
-      name,
-      lastUsedAt: Date.now(),
-    }).returning().get();
+    const project = app.db
+      .insert(projects)
+      .values({
+        path,
+        name,
+        lastUsedAt: Date.now(),
+      })
+      .returning()
+      .get();
 
     return reply.status(201).send(project);
   });

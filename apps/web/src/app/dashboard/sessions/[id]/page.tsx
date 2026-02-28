@@ -1,13 +1,13 @@
 'use client';
 
-import { use, useEffect } from 'react';
 import Link from 'next/link';
-import { useSessionStore } from '@/lib/stores/session-store';
-import { useDashboardWs } from '@/lib/hooks/use-dashboard-ws';
-import { useCancelSession, useRestartSession } from '@/lib/api';
+import { use, useEffect } from 'react';
 import { StatusBadge } from '@/components/dashboard/status-badge';
 import { TerminalPanel } from '@/components/dashboard/terminal-panel';
 import { Tooltip } from '@/components/ui/tooltip';
+import { useCancelSession, useRestartSession } from '@/lib/api';
+import { useDashboardWs } from '@/lib/hooks/use-dashboard-ws';
+import { useSessionStore } from '@/lib/stores/session-store';
 import type { Session } from '@/lib/types';
 
 function formatDuration(startedAt: number | null, endedAt?: number | null): string {
@@ -46,7 +46,9 @@ function useSessionFallback(id: string) {
       })
       .catch(() => {});
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, exists, setSession]);
 }
 
@@ -91,7 +93,8 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
   const cancelMutation = useCancelSession();
   const restartMutation = useRestartSession();
   const isActive = session && ['queued', 'running', 'needs_input'].includes(session.status);
-  const canRestart = session && ['completed', 'failed', 'cancelled', 'interrupted'].includes(session.status);
+  const canRestart =
+    session && ['completed', 'failed', 'cancelled', 'interrupted'].includes(session.status);
 
   if (!session) {
     return (
@@ -110,7 +113,10 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
       <div className="glass-strong shrink-0 border-b border-border-subtle p-4 md:p-6">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="rounded-lg p-1 text-text-muted hover:bg-surface-hover hover:text-text transition-colors">
+            <Link
+              href="/dashboard"
+              className="rounded-lg p-1 text-text-muted hover:bg-surface-hover hover:text-text transition-colors"
+            >
               &larr;
             </Link>
             <h2 className="text-xl font-semibold tracking-tight">
@@ -125,6 +131,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             </span>
             {canRestart && (
               <button
+                type="button"
                 onClick={() => restartMutation.mutate(session.id)}
                 disabled={restartMutation.isPending}
                 className="btn-press min-h-[44px] rounded-md bg-accent/15 px-3 py-2 text-xs text-accent hover:bg-accent/25 disabled:opacity-50"
@@ -134,6 +141,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
             )}
             {isActive && (
               <button
+                type="button"
                 onClick={() => cancelMutation.mutate(session.id)}
                 disabled={cancelMutation.isPending}
                 className="btn-press min-h-[44px] rounded-md px-3 py-2 text-xs text-status-error hover:bg-status-error/10 disabled:opacity-50"

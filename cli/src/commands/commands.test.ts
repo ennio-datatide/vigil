@@ -1,23 +1,33 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Command } from 'commander';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { Command } from 'commander';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ─── Commander program parsing ─────────────────────────────────────────────
 
 describe('CLI program', () => {
   it('should create a program with all commands registered', async () => {
     const program = new Command();
-    program
-      .name('praefectus')
-      .description('Praefectus — AI agent orchestration')
-      .version('0.1.0');
+    program.name('praefectus').description('Praefectus — AI agent orchestration').version('0.1.0');
 
-    program.command('up').description('Start the server and dashboard').option('--daemon', 'Run in background');
+    program
+      .command('up')
+      .description('Start the server and dashboard')
+      .option('--daemon', 'Run in background');
     program.command('down').description('Stop the server and dashboard');
-    program.command('start').description('Start a new agent session').argument('<project>').argument('<prompt>');
-    program.command('ls').description('List active sessions').option('--all', 'Include completed sessions');
-    program.command('auth').description('Check or manage authentication').argument('[action]', 'Action', 'status');
+    program
+      .command('start')
+      .description('Start a new agent session')
+      .argument('<project>')
+      .argument('<prompt>');
+    program
+      .command('ls')
+      .description('List active sessions')
+      .option('--all', 'Include completed sessions');
+    program
+      .command('auth')
+      .description('Check or manage authentication')
+      .argument('[action]', 'Action', 'status');
     program.command('status').description('Show server status');
     program.command('cleanup').description('Remove old worktrees from completed sessions');
 
@@ -38,7 +48,9 @@ describe('CLI program', () => {
 
     const upCmd = program.command('up').option('--daemon', 'Run in background');
     let capturedOptions: { daemon?: boolean } | undefined;
-    upCmd.action((opts) => { capturedOptions = opts; });
+    upCmd.action((opts) => {
+      capturedOptions = opts;
+    });
 
     program.parse(['node', 'praefectus', 'up', '--daemon']);
     expect(capturedOptions?.daemon).toBe(true);
@@ -86,10 +98,7 @@ describe('up command — PID detection', () => {
     writeFileSync(pidFile, String(process.pid));
 
     // Re-implement the detection logic from up.ts
-    const pid = parseInt(
-      (await import('node:fs')).readFileSync(pidFile, 'utf-8').trim(),
-      10,
-    );
+    const pid = parseInt((await import('node:fs')).readFileSync(pidFile, 'utf-8').trim(), 10);
     let isRunning = false;
     try {
       process.kill(pid, 0);
@@ -105,10 +114,7 @@ describe('up command — PID detection', () => {
     // Write a PID that is very unlikely to exist
     writeFileSync(pidFile, '9999999');
 
-    const pid = parseInt(
-      (await import('node:fs')).readFileSync(pidFile, 'utf-8').trim(),
-      10,
-    );
+    const pid = parseInt((await import('node:fs')).readFileSync(pidFile, 'utf-8').trim(), 10);
     let isRunning = false;
     try {
       process.kill(pid, 0);
@@ -130,7 +136,7 @@ describe('down command — missing PID file', () => {
     // Import and call down — it checks ~/.praefectus/server.pid
     // Instead of calling the real function (which checks homedir), test the logic
     const pidFile = join('/tmp', `pf-down-test-${Date.now()}`, 'server.pid');
-    const pidDir = join('/tmp', `pf-down-test-${Date.now()}`);
+    const _pidDir = join('/tmp', `pf-down-test-${Date.now()}`);
 
     // The PID file does not exist
     expect(existsSync(pidFile)).toBe(false);

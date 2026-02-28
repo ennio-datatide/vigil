@@ -1,5 +1,5 @@
-import type { FastifyPluginAsync } from 'fastify';
 import { CreatePipelineInput, UpdatePipelineInput } from '@praefectus/shared';
+import type { FastifyPluginAsync } from 'fastify';
 
 const pipelinesRoute: FastifyPluginAsync = async (app) => {
   // List all pipelines
