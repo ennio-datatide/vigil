@@ -31,14 +31,24 @@ const settingsRoute: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       return reply.status(400).send({ error: 'Invalid input', details: parsed.error.issues });
     }
-    app.settingsService.setTelegramConfig(parsed.data);
+
+    // If the token looks masked (contains "..."), preserve the existing token from DB
+    const data = { ...parsed.data };
+    if (data.botToken.includes('...')) {
+      const existing = app.settingsService.getTelegramConfig();
+      if (existing) {
+        data.botToken = existing.botToken;
+      }
+    }
+
+    app.settingsService.setTelegramConfig(data);
 
     // Re-initialize notifier with new config
-    const notifierConfig = parsed.data.enabled
+    const notifierConfig = data.enabled
       ? {
-          botToken: parsed.data.botToken,
-          chatId: parsed.data.chatId,
-          dashboardUrl: parsed.data.dashboardUrl,
+          botToken: data.botToken,
+          chatId: data.chatId,
+          dashboardUrl: data.dashboardUrl,
         }
       : null;
     app.notifier = new TelegramNotifier(notifierConfig);
