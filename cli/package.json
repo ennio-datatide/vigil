@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tsc --watch",
     "build": "tsc",
+    "lint": "biome lint ./src",
     "test": "vitest run"
   },
   "keywords": [

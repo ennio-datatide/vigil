@@ -10,11 +10,14 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "format": "biome format --write .",
+    "check": "biome check .",
     "lint": "turbo lint",
     "test": "turbo test",
     "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.4",
     "lightningcss": "^1.31.1",
     "turbo": "^2",
     "typescript": "^5.7"

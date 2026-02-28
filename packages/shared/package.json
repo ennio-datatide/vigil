@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "lint": "biome lint ./src",
     "dev": "tsc --watch"
   },
   "dependencies": {
