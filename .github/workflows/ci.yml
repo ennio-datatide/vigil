@@ -23,6 +23,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@praefectus.dev"
+          git config --global user.name "CI"
+
       - run: npm ci
 
       - run: npm run build
