@@ -4,7 +4,10 @@ Self-hosted mission control for orchestrating [Claude Code](https://claude.ai/co
 
 Configure tasks, and the system handles agent spawning in isolated worktrees with the right skills, monitors progress via a real-time dashboard, and alerts you when agents need input.
 
+[![CI](https://github.com/ennio-datatide/praefectus/actions/workflows/ci.yml/badge.svg)](https://github.com/ennio-datatide/praefectus/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/praefectus)](https://www.npmjs.com/package/praefectus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-green)](https://nodejs.org)
 
 ## Install
 
