@@ -16,6 +16,7 @@ import settingsRoute from './routes/settings.js';
 import skillsRoute from './routes/skills.js';
 import { AgentSpawner } from './services/agent-spawner.js';
 import { CleanupService } from './services/cleanup.js';
+import { DigestService } from './services/digest-service.js';
 import { EventBus } from './services/event-bus.js';
 import { TelegramNotifier } from './services/notifier.js';
 import { OutputManager } from './services/output-manager.js';
@@ -82,9 +83,10 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
     (sessionId, code) => sessionManager.handleProcessExit(sessionId, code),
   );
 
-  // Recovery: mark orphaned sessions as interrupted
+  // Recovery: mark orphaned sessions as interrupted and notify
   const recovery = new RecoveryService(db);
-  await recovery.recover();
+  const { interrupted } = await recovery.recover();
+  sessionManager.notifyInterrupted(interrupted);
 
   // Cleanup: periodic worktree garbage collection
   const cleanupService = new CleanupService(db, worktreeManager);
@@ -104,19 +106,39 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
   const notifier = new TelegramNotifier(telegramConfig);
 
   eventBus.on('notification', (data) => {
-    const telegramConfig = settingsService.getTelegramConfig();
-    if (telegramConfig?.enabled && telegramConfig.events.includes(data.type)) {
-      const session = db.select().from(sessions).where(eq(sessions.id, data.sessionId)).get();
-      if (session) {
-        app.notifier
-          .send({
-            sessionId: data.sessionId,
-            type: data.type,
-            projectName: session.projectPath.split('/').pop() ?? session.projectPath,
-            prompt: session.prompt,
-          })
-          .catch((err) => app.log.error(err, 'Telegram notification failed'));
-      }
+    const tgConfig = settingsService.getTelegramConfig();
+    if (!tgConfig?.enabled || !tgConfig.events.includes(data.type)) return;
+
+    // Build config for notifier from settings service (not constructor config)
+    notifier.updateConfig({
+      botToken: tgConfig.botToken,
+      chatId: tgConfig.chatId,
+      dashboardUrl: tgConfig.dashboardUrl,
+    });
+
+    // System-level notifications (recovery, test) don't have a session row
+    if (data.sessionId === 'system') {
+      notifier
+        .send({
+          sessionId: 'system',
+          type: data.type,
+          projectName: 'Praefectus',
+          prompt: data.message,
+        })
+        .catch((err) => app.log.error(err, 'Telegram notification failed'));
+      return;
+    }
+
+    const session = db.select().from(sessions).where(eq(sessions.id, data.sessionId)).get();
+    if (session) {
+      notifier
+        .send({
+          sessionId: data.sessionId,
+          type: data.type,
+          projectName: session.projectPath.split('/').pop() ?? session.projectPath,
+          prompt: session.prompt,
+        })
+        .catch((err) => app.log.error(err, 'Telegram notification failed'));
     }
   });
 
@@ -158,9 +180,14 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
   // Start session manager (handles hook events)
   sessionManager.start();
 
+  // Daily morning digest via Telegram
+  const digestService = new DigestService(db, notifier, settingsService);
+  digestService.start();
+
   // Graceful shutdown
   app.addHook('onClose', async () => {
     sessionManager.stop();
+    digestService.stop();
     clearInterval(cleanupInterval);
     ptyManager.disposeAll();
     outputManager.disposeAll();

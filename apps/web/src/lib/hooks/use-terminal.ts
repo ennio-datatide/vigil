@@ -134,8 +134,7 @@ export function useTerminal(
           }
         };
 
-        ws.onerror = (e) => {
-          console.error('[useTerminal] WebSocket error:', e);
+        ws.onerror = () => {
           term?.write('\r\n\x1b[31m[Connection error]\x1b[0m\r\n');
         };
 

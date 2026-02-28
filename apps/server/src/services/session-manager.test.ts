@@ -499,6 +499,140 @@ describe('SessionManager', () => {
         message: 'Something went wrong',
       });
     });
+
+    it('should mark session as needs_input on Notification with notification_type elicitation_dialog', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-elicit', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-elicit',
+        eventType: 'Notification',
+        toolName: null,
+        payload: {
+          hook_event_name: 'Notification',
+          notification_type: 'elicitation_dialog',
+          message: 'Claude needs your input',
+          title: 'Input needed',
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-elicit'))
+        .get();
+      expect(session?.status).toBe('needs_input');
+
+      expect(notificationHandler).toHaveBeenCalledWith({
+        sessionId: 'sess-elicit',
+        type: 'needs_input',
+        message: 'Claude needs your input',
+      });
+    });
+
+    it('should mark session as needs_input on Notification with notification_type permission_prompt', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-perm', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-perm',
+        eventType: 'Notification',
+        toolName: null,
+        payload: {
+          hook_event_name: 'Notification',
+          notification_type: 'permission_prompt',
+          message: 'Claude needs your permission to use Bash',
+          title: 'Permission needed',
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-perm'))
+        .get();
+      expect(session?.status).toBe('needs_input');
+
+      expect(notificationHandler).toHaveBeenCalledWith({
+        sessionId: 'sess-perm',
+        type: 'needs_input',
+        message: 'Claude needs your permission to use Bash',
+      });
+    });
+
+    it('should mark session as needs_input on Notification with notification_type idle_prompt', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-idle', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-idle',
+        eventType: 'Notification',
+        toolName: null,
+        payload: {
+          hook_event_name: 'Notification',
+          notification_type: 'idle_prompt',
+          message: 'Claude has been idle',
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-idle'))
+        .get();
+      expect(session?.status).toBe('needs_input');
+
+      expect(notificationHandler).toHaveBeenCalledWith({
+        sessionId: 'sess-idle',
+        type: 'needs_input',
+        message: 'Claude has been idle',
+      });
+    });
+
+    it('should not change session status for auth_success notification_type', () => {
+      manager.start();
+      insertSession(db, { id: 'sess-auth-ok', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      bus.emit('hook_event', {
+        sessionId: 'sess-auth-ok',
+        eventType: 'Notification',
+        toolName: null,
+        payload: {
+          hook_event_name: 'Notification',
+          notification_type: 'auth_success',
+          message: 'Authentication successful',
+        },
+        timestamp: Date.now(),
+      });
+
+      const session = db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, 'sess-auth-ok'))
+        .get();
+      expect(session?.status).toBe('running');
+
+      expect(notificationHandler).toHaveBeenCalledWith({
+        sessionId: 'sess-auth-ok',
+        type: 'auth_success',
+        message: 'Authentication successful',
+      });
+    });
   });
 
   describe('start and stop lifecycle', () => {

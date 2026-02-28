@@ -139,6 +139,7 @@ const sessionsRoute: FastifyPluginAsync = async (app) => {
       .get();
 
     app.eventBus.emit('session_update', { sessionId: request.params.id, status: 'cancelled' });
+    app.sessionManager.notifyCancelled(request.params.id);
 
     if (!updated) return reply.status(500).send({ error: 'Failed to update session' });
     return withParsedGitMetadata(updated);

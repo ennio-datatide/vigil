@@ -20,6 +20,21 @@ const notificationsRoute: FastifyPluginAsync = async (app) => {
     return app.db.select().from(notifications).orderBy(desc(notifications.id)).all();
   });
 
+  // Send a test notification through the full pipeline (DB + event bus + Telegram)
+  app.post('/api/notifications/test', async () => {
+    const message = 'Test notification from Praefectus';
+    const type = 'session_done';
+
+    app.db
+      .insert(notifications)
+      .values({ sessionId: 'system', type, message, sentAt: Date.now() })
+      .run();
+
+    app.eventBus.emit('notification', { sessionId: 'system', type, message });
+
+    return { ok: true, message: 'Test notification sent' };
+  });
+
   // Mark a notification as read
   app.patch<{ Params: { id: string } }>('/api/notifications/:id/read', async (request, reply) => {
     const id = Number(request.params.id);

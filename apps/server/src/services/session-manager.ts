@@ -1,12 +1,13 @@
 import { and, eq, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { Db } from '../db/client.js';
-import { chainRules, sessions } from '../db/schema.js';
+import { chainRules, notifications, sessions } from '../db/schema.js';
 import { updateSessionStatus } from '../utils/update-session-status.js';
 import type { BusEvents, EventBus } from './event-bus.js';
 import type { PipelineService } from './pipeline-service.js';
 
 const AUTH_KEYWORDS = ['auth', 'token', 'expired', 'unauthorized', 'login'];
+const NEEDS_INPUT_TYPES = ['elicitation_dialog', 'permission_prompt', 'idle_prompt'];
 
 function containsAuthError(payload: Record<string, unknown>): boolean {
   const payloadStr = JSON.stringify(payload).toLowerCase();
@@ -53,6 +54,7 @@ export class SessionManager {
         endedAt: Date.now(),
         exitReason: 'error',
       });
+      this.emitNotification(data.sessionId, 'error', `Session failed to start: ${data.error}`);
     };
     this.bus.on('session_spawn_failed', this.spawnFailedHandler);
   }
@@ -95,6 +97,9 @@ export class SessionManager {
 
     if (code === 0) {
       this.processChainRules(sessionId);
+      this.emitNotification(sessionId, 'session_done', 'Session completed successfully');
+    } else {
+      this.emitNotification(sessionId, 'error', `Session exited with code ${code}`);
     }
   }
 
@@ -164,29 +169,58 @@ export class SessionManager {
       this.processChainRules(sessionId);
     }
 
-    this.bus.emit('session_update', {
-      sessionId,
-      status: isAuth ? 'auth_required' : 'completed',
-    });
+    const status = isAuth ? 'auth_required' : 'completed';
+    this.bus.emit('session_update', { sessionId, status });
+
+    // Emit notification so Telegram and dashboard are alerted
+    const notifType = isAuth ? 'auth_required' : 'session_done';
+    const notifMessage = isAuth
+      ? 'Session requires authentication'
+      : 'Session completed successfully';
+    this.emitNotification(sessionId, notifType, notifMessage);
   }
 
   private handleNotificationEvent(sessionId: string, payload: Record<string, unknown>): void {
-    const type = (payload.type as string) ?? 'info';
+    // Claude Code Notification hook sends `notification_type` (e.g., 'elicitation_dialog',
+    // 'permission_prompt'). Legacy/internal events use `type`. Support both.
+    const notificationType =
+      (payload.notification_type as string) ?? (payload.type as string) ?? 'info';
     const message = (payload.message as string) ?? '';
 
-    if (type === 'needs_input') {
-      this.db
-        .update(sessions)
-        .set({ status: 'needs_input' })
-        .where(eq(sessions.id, sessionId))
-        .run();
+    // Map Claude Code notification types to our internal types
+    const isNeedsInput =
+      notificationType === 'needs_input' || NEEDS_INPUT_TYPES.includes(notificationType);
+
+    const internalType = isNeedsInput ? 'needs_input' : notificationType;
+
+    if (isNeedsInput) {
+      updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' });
     }
 
-    this.bus.emit('notification', {
-      sessionId,
-      type,
-      message,
-    });
+    this.emitNotification(sessionId, internalType, message);
+  }
+
+  /** Notify that a session was cancelled by user. */
+  notifyCancelled(sessionId: string): void {
+    this.emitNotification(sessionId, 'error', 'Session cancelled by user');
+  }
+
+  /** Notify that sessions were interrupted (e.g. server restart). */
+  notifyInterrupted(count: number): void {
+    if (count === 0) return;
+    // Use a generic session ID — this is a system-level notification
+    const msg =
+      count === 1
+        ? '1 session was interrupted by server restart'
+        : `${count} sessions were interrupted by server restart`;
+    this.emitNotification('system', 'error', msg);
+  }
+
+  /** Persist notification to DB and emit to event bus (Telegram + dashboard). */
+  private emitNotification(sessionId: string, type: string, message: string): void {
+    this.db.insert(notifications).values({ sessionId, type, message, sentAt: Date.now() }).run();
+
+    this.bus.emit('notification', { sessionId, type, message });
   }
 
   private processChainRules(sessionId: string): void {

@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { PathInput } from '@/components/ui/path-input';
 import { useProjectsQuery } from '@/lib/api';
 
 export default function ProjectsPage() {
@@ -59,14 +60,9 @@ export default function ProjectsPage() {
           className="flex-1 rounded-lg border border-border-subtle bg-bg px-3 py-2 text-sm focus-accent transition-colors"
           required
         />
-        <input
-          type="text"
-          placeholder="/path/to/project"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          className="flex-1 rounded-lg border border-border-subtle bg-bg px-3 py-2 text-sm focus-accent transition-colors"
-          required
-        />
+        <div className="flex-1">
+          <PathInput value={path} onChange={setPath} />
+        </div>
         <button
           type="submit"
           disabled={addProject.isPending}
