@@ -24,9 +24,9 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7",
-    "@types/node": "^22",
+    "@types/node": "^25",
     "drizzle-kit": "^0.31",
     "tsx": "^4",
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }

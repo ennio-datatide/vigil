@@ -39,8 +39,8 @@
     "@praefectus/shared": "*"
   },
   "devDependencies": {
-    "@types/node": "^22",
+    "@types/node": "^25",
     "tsx": "^4",
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }
