@@ -96,3 +96,10 @@ cd apps/server && npx vitest
 - Routes are registered manually in tests via `app.register()`
 - Use `app.inject()` for HTTP testing (no actual server needed)
 - E2E tests in `apps/server/src/e2e/` test full API lifecycle
+- **Bug fixes MUST include a regression test** -- see `.claude/skills/bug-driven-testing.md`
+
+## Code Quality
+
+- **Biome** -- Linter and formatter. Run `npm run check` before committing.
+- **SOLID principles, clean code, TDD** -- see `.claude/skills/code-quality-standards.md`
+- **Bug-driven testing** -- every bug fix starts with a failing test. See `.claude/skills/bug-driven-testing.md`
