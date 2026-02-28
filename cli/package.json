@@ -33,7 +33,7 @@
   },
   "author": "Ennio Maldonado",
   "dependencies": {
-    "commander": "^13",
+    "commander": "^14",
     "@praefectus/shared": "*"
   },
   "devDependencies": {
