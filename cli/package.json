@@ -28,6 +28,9 @@
     "directory": "cli"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "author": "Ennio Maldonado",
   "dependencies": {
     "commander": "^13",
