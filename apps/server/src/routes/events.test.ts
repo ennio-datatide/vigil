@@ -58,8 +58,10 @@ describe('POST /events', () => {
   });
 
   it('should emit events on the event bus', async () => {
-    const events: unknown[] = [];
-    app.eventBus.on('hook_event', (e) => events.push(e));
+    const events: { sessionId: string; eventType: string }[] = [];
+    app.eventBus.on('hook_event', (e) =>
+      events.push(e as { sessionId: string; eventType: string }),
+    );
 
     await app.inject({
       method: 'POST',

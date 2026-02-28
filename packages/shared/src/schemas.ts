@@ -132,5 +132,5 @@ export const CreateSessionInput = z.object({
 
 export const HookPayload = z.object({
   session_id: z.string(),
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
 });

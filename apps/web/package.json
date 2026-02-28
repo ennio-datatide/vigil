@@ -5,9 +5,7 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "biome lint ./src",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "lint": "biome lint ./src"
   },
   "dependencies": {
     "@praefectus/shared": "*",
