@@ -1,0 +1,40 @@
+{
+  "name": "praefectus",
+  "version": "0.1.0",
+  "description": "Self-hosted mission control for orchestrating Claude Code agents across git worktrees",
+  "type": "module",
+  "bin": { "praefectus": "dist/index.js" },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai-agents",
+    "orchestration",
+    "worktree",
+    "tmux",
+    "mission-control"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ennio-datatide/praefectus.git",
+    "directory": "cli"
+  },
+  "license": "MIT",
+  "author": "Ennio Maldonado",
+  "dependencies": {
+    "commander": "^13",
+    "@praefectus/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "vitest": "^3"
+  }
+}

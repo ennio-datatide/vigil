@@ -1,0 +1,22 @@
+{
+  "name": "praefectus",
+  "private": true,
+  "packageManager": "npm@11.5.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "cli"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.31.1",
+    "turbo": "^2",
+    "typescript": "^5.7"
+  }
+}
