@@ -5,7 +5,10 @@ describe('POST /events', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-events-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-events-${Date.now()}`,
+      apiToken: undefined,
+    });
 
     // Initialize schema tables (in-memory / fresh DB needs DDL)
     const { initializeSchema } = await import('../db/client.js');

@@ -8,7 +8,7 @@ describe('skills routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome });
+    app = await buildApp({ praefectusHome, apiToken: undefined });
   });
 
   afterAll(async () => {

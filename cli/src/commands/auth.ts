@@ -1,10 +1,16 @@
 import { spawn } from 'node:child_process';
-import { DEFAULT_SERVER_PORT } from '@praefectus/shared';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { apiFetch } from '../lib/api-client.js';
 
 export async function auth(action: string) {
   switch (action) {
     case 'status':
       await checkAuthStatus();
+      break;
+    case 'token':
+      printToken();
       break;
     case 'claude':
       runAuthDirect('claude');
@@ -13,16 +19,30 @@ export async function auth(action: string) {
       runAuthDirect('codex');
       break;
     default:
-      console.error(`Unknown auth action: ${action}. Use: status, claude, codex`);
+      console.error(`Unknown auth action: ${action}. Use: status, token, claude, codex`);
       process.exit(1);
   }
 }
 
-async function checkAuthStatus() {
-  const baseUrl = `http://localhost:${DEFAULT_SERVER_PORT}`;
-
+function printToken() {
   try {
-    const res = await fetch(`${baseUrl}/health`);
+    const configPath = join(homedir(), '.praefectus', 'config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (config.apiToken) {
+      console.log(config.apiToken);
+    } else {
+      console.error('No API token configured. Start the server first: praefectus up');
+      process.exit(1);
+    }
+  } catch {
+    console.error('Could not read config. Start the server first: praefectus up');
+    process.exit(1);
+  }
+}
+
+async function checkAuthStatus() {
+  try {
+    const res = await apiFetch('/health');
 
     if (!res.ok) {
       console.error(`Server returned: ${res.statusText}`);

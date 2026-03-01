@@ -1,4 +1,5 @@
 import { DEFAULT_SERVER_PORT } from '@praefectus/shared';
+import { apiFetch } from '../lib/api-client.js';
 
 interface SessionRow {
   id: string;
@@ -6,13 +7,11 @@ interface SessionRow {
 }
 
 export async function status() {
-  const baseUrl = `http://localhost:${DEFAULT_SERVER_PORT}`;
-
   try {
     // Fetch health and sessions in parallel
     const [healthRes, sessionsRes] = await Promise.all([
-      fetch(`${baseUrl}/health`),
-      fetch(`${baseUrl}/api/sessions`),
+      apiFetch('/health'),
+      apiFetch('/api/sessions'),
     ]);
 
     if (!healthRes.ok) {

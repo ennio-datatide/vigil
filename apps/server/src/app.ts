@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { type PraefectusConfig, resolveConfig } from './config.js';
 import { createDb, type Db, initializeSchema } from './db/client.js';
 import { sessions } from './db/schema.js';
+import { registerAuthHook } from './middleware/auth.js';
 import eventsRoute from './routes/events.js';
 import fsRoute from './routes/fs.js';
 import notificationsRoute from './routes/notifications.js';
@@ -146,6 +147,9 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
 
   await app.register(cors, { origin: true });
   await app.register(websocket);
+
+  // Auth hook — must come before route registration
+  registerAuthHook(app, config.apiToken);
 
   // Decorate with shared instances
   app.decorate('config', config);

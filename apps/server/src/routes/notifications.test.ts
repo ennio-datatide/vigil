@@ -6,7 +6,10 @@ describe('notifications routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-notifications-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-notifications-${Date.now()}`,
+      apiToken: undefined,
+    });
   });
 
   afterAll(async () => {

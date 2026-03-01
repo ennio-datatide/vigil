@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getToken } from './auth-token';
 import type {
   CreatePipelineInputType,
   CreateSessionInputType,
@@ -11,7 +12,18 @@ import type {
 const API_BASE = ''; // Uses Next.js rewrites to proxy to Fastify
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, init);
+  const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const res = await fetch(`${API_BASE}${url}`, { ...init, headers });
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/dashboard/auth';
+    }
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }

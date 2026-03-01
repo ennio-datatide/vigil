@@ -5,7 +5,7 @@ describe('Fastify app', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-${Date.now()}` });
+    app = await buildApp({ praefectusHome: `/tmp/pf-test-${Date.now()}`, apiToken: undefined });
   });
 
   afterAll(async () => {

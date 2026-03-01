@@ -5,7 +5,7 @@ describe('E2E: Session lifecycle', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-e2e-test-${Date.now()}` });
+    app = await buildApp({ praefectusHome: `/tmp/pf-e2e-test-${Date.now()}`, apiToken: undefined });
 
     await app.ready();
   });
