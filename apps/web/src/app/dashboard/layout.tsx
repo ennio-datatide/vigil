@@ -155,11 +155,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
-                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors ${
                   collapsed ? 'justify-center px-2' : ''
                 } ${
                   active
-                    ? 'bg-accent-glow text-text border-l-2 border-accent pl-2.5'
+                    ? 'bg-accent-glow text-text'
                     : 'text-text-muted hover:bg-surface-hover hover:text-text'
                 }`}
               >

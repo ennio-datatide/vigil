@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useSessionStore } from '@/lib/stores/session-store';
 import type { Session } from '@/lib/types';
 import { SessionCard } from './session-card';
@@ -31,7 +32,7 @@ export function SessionGrid() {
 
   if (!initialized) {
     return (
-      <div className="grid grid-cols-1 gap-4 p-6 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <SessionCardSkeleton key={i} />
         ))}
@@ -60,10 +61,21 @@ export function SessionGrid() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-6 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {sorted.map((session) => (
-        <SessionCard key={session.id} session={session} />
-      ))}
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-text-muted">Active Sessions</h2>
+        <Link
+          href="/dashboard/history"
+          className="text-xs text-text-faint hover:text-text-muted transition-colors"
+        >
+          View all
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {sorted.map((session) => (
+          <SessionCard key={session.id} session={session} />
+        ))}
+      </div>
     </div>
   );
 }

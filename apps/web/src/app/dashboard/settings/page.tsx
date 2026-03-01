@@ -64,159 +64,158 @@ export default function SettingsPage() {
   const isConnected = health?.status === 'ok';
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 p-6">
-      <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
+    <div className="mx-auto max-w-[640px] space-y-7 p-6 md:py-8">
+      <div>
+        <h2 className="text-[28px] font-extrabold -tracking-[0.04em] text-text">Settings</h2>
+        <p className="mt-1 text-[13px] text-text-faint">Server configuration and integrations</p>
+      </div>
 
       {/* Server Status */}
-      <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
-          Server Status
-        </h3>
+      <section className="flex items-center justify-between rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] p-5">
+        <div>
+          <h3 className="text-sm font-semibold text-text">Server Status</h3>
+          <p className="mt-1 text-xs text-text-faint">Praefectus daemon on port 4000</p>
+        </div>
         <div className="flex items-center gap-2">
           <span
-            className={`h-3 w-3 rounded-full ${isConnected ? 'bg-accent shadow-[0_0_6px_1px] shadow-accent/50' : 'bg-status-error'}`}
+            className={`h-2 w-2 rounded-full ${
+              isConnected
+                ? 'bg-status-working shadow-[0_0_8px] shadow-status-working/50'
+                : 'bg-status-error'
+            }`}
           />
-          <span className="text-sm">{isConnected ? 'Connected' : 'Disconnected'}</span>
+          <span
+            className={`text-[13px] font-medium ${isConnected ? 'text-status-working' : 'text-status-error'}`}
+          >
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
         </div>
-        {!isConnected && (
-          <p className="mt-2 text-xs text-text-muted">
-            Run <code className="font-mono text-accent">praefectus up</code> to start the server.
-          </p>
-        )}
       </section>
 
       {/* Telegram Notifications */}
-      <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-text-muted">
-          Telegram Notifications
-        </h3>
-        <div className="space-y-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="h-4 w-4 rounded accent-accent"
-            />
-            <span className="text-sm">Enable Telegram notifications</span>
-          </label>
-
+      <section className="space-y-5 rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] p-6">
+        <div className="flex items-center justify-between">
           <div>
-            <label className="mb-1 block text-xs text-text-muted">Bot Token</label>
+            <h3 className="text-sm font-semibold text-text">Telegram Notifications</h3>
+            <p className="mt-1 text-xs text-text-faint">Get alerts when agents need attention</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEnabled((e) => !e)}
+            className={`relative h-[22px] w-10 rounded-full transition-colors ${
+              enabled ? 'bg-accent' : 'bg-surface-hover'
+            }`}
+          >
+            <span
+              className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white transition-all ${
+                enabled ? 'left-[20px]' : 'left-[2px]'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="space-y-3.5">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Bot Token</label>
             <input
               type="password"
               value={botToken}
               onChange={(e) => setBotToken(e.target.value)}
               placeholder="123456:ABC-DEF..."
-              className="w-full rounded-lg border border-border-subtle bg-bg px-3 py-2 text-sm font-mono focus-accent transition-colors"
+              className="w-full rounded-lg border border-border-subtle bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5 font-mono text-xs text-text-muted focus-accent transition-colors"
             />
           </div>
-
           <div>
-            <label className="mb-1 block text-xs text-text-muted">Chat ID</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Chat ID</label>
             <input
               type="text"
               value={chatId}
               onChange={(e) => setChatId(e.target.value)}
               placeholder="-1001234567890"
-              className="w-full rounded-lg border border-border-subtle bg-bg px-3 py-2 text-sm font-mono focus-accent transition-colors"
+              className="w-full rounded-lg border border-border-subtle bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5 font-mono text-xs text-text-muted focus-accent transition-colors"
             />
           </div>
-
           <div>
-            <label className="mb-1 block text-xs text-text-muted">Dashboard URL</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Dashboard URL</label>
             <input
               type="url"
               value={dashboardUrl}
               onChange={(e) => setDashboardUrl(e.target.value)}
               placeholder="http://localhost:3000"
-              className="w-full rounded-lg border border-border-subtle bg-bg px-3 py-2 text-sm focus-accent transition-colors"
+              className="w-full rounded-lg border border-border-subtle bg-[rgba(255,255,255,0.03)] px-3.5 py-2.5 text-xs text-text-muted focus-accent transition-colors"
             />
           </div>
+        </div>
 
-          <div>
-            <label className="mb-2 block text-xs text-text-muted">Notify on these events:</label>
-            <div className="space-y-2">
-              {EVENT_OPTIONS.map((opt) => (
-                <label key={opt.key} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={events.includes(opt.key)}
-                    onChange={() => toggleEvent(opt.key)}
-                    className="h-4 w-4 rounded accent-accent"
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                  <span className="text-xs text-text-muted">&mdash; {opt.desc}</span>
-                </label>
-              ))}
-            </div>
+        <div>
+          <label className="mb-2.5 block text-xs font-medium text-text-muted">Notify on</label>
+          <div className="flex flex-wrap gap-2">
+            {EVENT_OPTIONS.map((opt) => {
+              const checked = events.includes(opt.key);
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => toggleEvent(opt.key)}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                    checked
+                      ? 'border border-accent/20 bg-accent/10 text-text-muted'
+                      : 'border border-border-subtle bg-[rgba(255,255,255,0.02)] text-text-faint'
+                  }`}
+                >
+                  {checked ? (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0">
+                      <rect width="14" height="14" rx="3" className="fill-accent" />
+                      <path
+                        d="M3.5 7L6 9.5L10.5 4.5"
+                        stroke="white"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-[3px] border border-border" />
+                  )}
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saveMutation.isPending}
-              className="btn-press rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
-            >
-              {saveMutation.isPending ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={handleTest}
-              disabled={testMutation.isPending || !enabled}
-              className="btn-press rounded-lg border border-border-subtle px-4 py-2 text-sm text-text-muted hover:bg-surface-hover transition-colors disabled:opacity-50"
-            >
-              {testMutation.isPending ? 'Sending...' : 'Test Connection'}
-            </button>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveMutation.isPending}
+            className="btn-press rounded-lg bg-accent px-5 py-2.5 text-[13px] font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+          >
+            {saveMutation.isPending ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testMutation.isPending || !enabled}
+            className="btn-press rounded-lg border border-border-subtle px-5 py-2.5 text-[13px] font-medium text-text-muted hover:bg-surface-hover transition-colors disabled:opacity-50"
+          >
+            {testMutation.isPending ? 'Sending...' : 'Test Connection'}
+          </button>
         </div>
       </section>
 
-      {/* Remote Access */}
-      <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
-          Remote Access
-        </h3>
-        <p className="mb-3 text-sm text-text-muted">
-          Access this dashboard from your phone or another device on your network:
-        </p>
-        <div className="space-y-2 font-mono text-xs">
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle">
-            <span className="text-text-muted">Local network: </span>
-            <span className="text-accent select-all">
-              http://{typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:
-              {typeof window !== 'undefined' ? window.location.port : '3000'}
-            </span>
-          </div>
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle">
-            <span className="text-text-muted">Tailscale: </span>
-            <span className="text-text">
-              Run <code className="text-accent">tailscale ip -4</code> to get your Tailscale IP,
-              then visit <code className="text-accent">http://&lt;tailscale-ip&gt;:3000</code>
-            </span>
-          </div>
+      {/* Agent Authentication */}
+      <section className="space-y-4 rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] p-6">
+        <div>
+          <h3 className="text-sm font-semibold text-text">Agent Authentication</h3>
+          <p className="mt-1 text-xs text-text-faint">Re-authenticate agents using the CLI</p>
         </div>
-        <p className="mt-3 text-xs text-text-muted">
-          Tip: Tailscale works from anywhere, not just your home WiFi. Install Tailscale on your
-          phone and connect with the same account.
-        </p>
-      </section>
-
-      {/* CLI Auth */}
-      <section className="glass rounded-xl p-6 space-y-4">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">
-          Agent Authentication
-        </h3>
-        <p className="mb-3 text-sm text-text-muted">
-          If agents report auth errors, re-authenticate with:
-        </p>
-        <div className="space-y-2 font-mono text-xs">
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">
-            praefectus auth claude
+        <div className="space-y-2">
+          <div className="rounded-lg border border-[rgba(255,255,255,0.04)] bg-[rgba(0,0,0,0.3)] px-3.5 py-2.5 font-mono text-xs text-text-muted">
+            $ praefectus auth claude
           </div>
-          <div className="rounded-lg bg-bg p-3 border border-border-subtle text-accent">
-            praefectus auth codex
+          <div className="rounded-lg border border-[rgba(255,255,255,0.04)] bg-[rgba(0,0,0,0.3)] px-3.5 py-2.5 font-mono text-xs text-text-muted">
+            $ praefectus auth codex
           </div>
         </div>
       </section>
