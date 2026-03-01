@@ -109,24 +109,37 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Session info header */}
-      <div className="glass-strong shrink-0 border-b border-border-subtle p-4 md:p-6">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-lg p-1 text-text-muted hover:bg-surface-hover hover:text-text transition-colors"
+      {/* Session info header — compact */}
+      <div className="shrink-0 border-b border-border-subtle bg-[rgba(255,255,255,0.03)] px-6 py-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle text-text-muted hover:bg-surface-hover hover:text-text transition-colors"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              &larr;
-            </Link>
-            <h2 className="text-xl font-semibold tracking-tight">
+              <path d="M10 3L5 8l5 5" />
+            </svg>
+          </Link>
+          <div className="flex flex-1 items-center gap-3 min-w-0">
+            <span className="shrink-0 text-[15px] font-semibold text-text">
               {session.agentType === 'claude' ? 'Claude' : 'Codex'}
               {session.role ? ` (${session.role})` : ''}
-            </h2>
+            </span>
             <StatusBadge status={session.status} />
+            <span className="mx-1 h-4 w-px bg-border-subtle" />
+            <p className="min-w-0 truncate text-[13px] text-text-muted">{session.prompt}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted">
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="font-mono text-xs tabular-nums text-text-faint">
               {formatDuration(session.startedAt, session.endedAt)}
             </span>
             {canRestart && (
@@ -134,7 +147,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                 type="button"
                 onClick={() => restartMutation.mutate(session.id)}
                 disabled={restartMutation.isPending}
-                className="btn-press min-h-[44px] rounded-md bg-accent/15 px-3 py-2 text-xs text-accent hover:bg-accent/25 disabled:opacity-50"
+                className="btn-press rounded-lg bg-accent/15 px-3 py-1.5 text-xs text-accent hover:bg-accent/25 disabled:opacity-50"
               >
                 {restartMutation.isPending ? 'Restarting...' : 'Restart'}
               </button>
@@ -144,18 +157,12 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
                 type="button"
                 onClick={() => cancelMutation.mutate(session.id)}
                 disabled={cancelMutation.isPending}
-                className="btn-press min-h-[44px] rounded-md px-3 py-2 text-xs text-status-error hover:bg-status-error/10 disabled:opacity-50"
+                className="btn-press rounded-lg border border-status-error/20 bg-status-error/[0.06] px-3.5 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 disabled:opacity-50"
               >
                 Cancel
               </button>
             )}
           </div>
-        </div>
-        <p className="text-sm text-text-muted leading-relaxed">{session.prompt}</p>
-        <div className="mt-1 text-xs text-text-faint">
-          Project: {session.projectPath}
-          {session.skillsUsed && ` | Skills: ${session.skillsUsed}`}
-          {session.parentId && ` | Parent: ${session.parentId}`}
         </div>
       </div>
 

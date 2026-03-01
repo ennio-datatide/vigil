@@ -41,6 +41,7 @@ export function SessionCard({ session }: { session: Session }) {
   const isActive = ['queued', 'running', 'needs_input'].includes(session.status);
   const isDone = ['completed', 'failed', 'cancelled', 'interrupted'].includes(session.status);
   const glowClass = GLOW_MAP[session.status] ?? '';
+  const status = session.status;
 
   return (
     <>
@@ -51,7 +52,7 @@ export function SessionCard({ session }: { session: Session }) {
         exit={{ opacity: 0, scale: 0.95 }}
         whileHover={{ y: -2 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className={`group glass relative rounded-xl border-l-2 border-transparent ${glowClass} transition-shadow`}
+        className={`group relative rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] ${glowClass} transition-shadow`}
       >
         <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {isActive && (
@@ -75,22 +76,50 @@ export function SessionCard({ session }: { session: Session }) {
           )}
         </div>
 
-        <Link href={`/dashboard/sessions/${session.id}`} className="block p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">
-              {session.agentType === 'claude' ? 'Claude' : 'Codex'}
-              {session.role ? ` / ${session.role}` : ''}
-            </span>
-            <StatusBadge status={session.status} />
-          </div>
-
-          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-text">{session.prompt}</p>
-
-          <div className="mt-3 flex items-center justify-between text-xs text-text-faint">
-            <span className="truncate font-mono">{session.projectPath.split('/').pop()}</span>
-            <span className="shrink-0 tabular-nums">
+        <Link href={`/dashboard/sessions/${session.id}`} className="block">
+          <div className="flex items-center justify-between px-[18px] pt-4 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  status === 'running'
+                    ? 'bg-status-working shadow-[0_0_8px] shadow-status-working/40'
+                    : status === 'needs_input'
+                      ? 'bg-status-needs-input shadow-[0_0_8px] shadow-status-needs-input/40'
+                      : status === 'auth_required'
+                        ? 'bg-status-auth shadow-[0_0_8px] shadow-status-auth/40'
+                        : status === 'failed'
+                          ? 'bg-status-error'
+                          : 'bg-text-faint'
+                }`}
+              />
+              <span className="text-[13px] font-semibold text-text">
+                {session.agentType === 'claude' ? 'Claude' : 'Codex'}
+              </span>
+              <StatusBadge status={session.status} />
+            </div>
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-text-faint">
               {formatDuration(session.startedAt, session.endedAt)}
             </span>
+          </div>
+
+          <div className="px-[18px] pb-3.5">
+            <p className="line-clamp-2 text-[13px] leading-[20px] text-text-muted">
+              {session.prompt}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 border-t border-border-subtle px-[18px] py-3">
+            <span className="truncate font-mono text-[11px] text-text-faint">
+              {session.projectPath.split('/').pop()}
+            </span>
+            {session.gitMetadata?.branch && (
+              <>
+                <span className="h-[3px] w-[3px] shrink-0 rounded-full bg-text-faint/50" />
+                <span className="truncate font-mono text-[11px] text-text-faint">
+                  {session.gitMetadata.branch}
+                </span>
+              </>
+            )}
           </div>
         </Link>
       </motion.div>
