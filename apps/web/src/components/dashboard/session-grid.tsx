@@ -25,21 +25,17 @@ function sortSessions(sessions: Session[]): Session[] {
   });
 }
 
-const ACTIVE_STATUSES = ['queued', 'running', 'needs_input', 'auth_required'];
-
 export function SessionGrid({ search = '' }: { search?: string }) {
   const sessions = useSessionStore((s) => s.sessions);
   const initialized = useSessionStore((s) => s.initialized);
-  const active = sortSessions(
-    Object.values(sessions).filter((s) => ACTIVE_STATUSES.includes(s.status)),
-  );
+  const all = sortSessions(Object.values(sessions));
   const sorted = search
-    ? active.filter(
+    ? all.filter(
         (s) =>
           s.prompt?.toLowerCase().includes(search.toLowerCase()) ||
           s.projectPath?.toLowerCase().includes(search.toLowerCase()),
       )
-    : active;
+    : all;
 
   if (!initialized) {
     return (
@@ -51,10 +47,7 @@ export function SessionGrid({ search = '' }: { search?: string }) {
     );
   }
 
-  const totalCount = Object.keys(sessions).length;
-
-  // No sessions at all — show onboarding empty state
-  if (totalCount === 0) {
+  if (sorted.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <svg
@@ -72,11 +65,6 @@ export function SessionGrid({ search = '' }: { search?: string }) {
         <p className="text-sm text-text-muted">Start your first agent session with the + button</p>
       </div>
     );
-  }
-
-  // Sessions exist but none are active — hide this section (Recent Activity shows them)
-  if (sorted.length === 0) {
-    return null;
   }
 
   return (

@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { KpiBar } from '@/components/dashboard/kpi-bar';
 import { NotificationBell } from '@/components/dashboard/notification-bell';
-import { RecentActivity } from '@/components/dashboard/recent-activity';
 import { SessionGrid } from '@/components/dashboard/session-grid';
 import { SessionList } from '@/components/dashboard/session-list';
 import { useDashboardWs } from '@/lib/hooks/use-dashboard-ws';
@@ -67,9 +66,6 @@ export default function DashboardPage() {
       </div>
       <div className="hidden md:block">
         <SessionGrid search={search} />
-      </div>
-      <div className="hidden md:block">
-        <RecentActivity />
       </div>
     </div>
   );
