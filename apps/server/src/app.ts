@@ -69,7 +69,9 @@ function mapStatusToEventType(status: string): string {
   }
 }
 
-function parseGitMetadata(raw: string): { branch: string; repoName: string; commitHash: string } | null {
+function parseGitMetadata(
+  raw: string,
+): { branch: string; repoName: string; commitHash: string } | null {
   try {
     return JSON.parse(raw);
   } catch {

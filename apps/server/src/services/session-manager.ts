@@ -113,11 +113,7 @@ export class SessionManager {
     if (code === 0) {
       this.processChainRules(sessionId);
     }
-    this.emitNotification(
-      sessionId,
-      code === 0 ? 'session_done' : 'error',
-      message,
-    );
+    this.emitNotification(sessionId, code === 0 ? 'session_done' : 'error', message);
   }
 
   private handleHookEvent(data: BusEvents['hook_event']): void {
