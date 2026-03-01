@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getToken, setToken, clearToken } from '@/lib/auth-token';
+import { clearToken, getToken, setToken } from '@/lib/auth-token';
 
 export default function AuthPage() {
   const [tokenInput, setTokenInput] = useState('');

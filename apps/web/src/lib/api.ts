@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getToken } from './auth-token';
 import type {
   CreatePipelineInputType,
   CreateSessionInputType,
@@ -7,7 +8,6 @@ import type {
   Session,
   UpdatePipelineInputType,
 } from './types';
-import { getToken } from './auth-token';
 
 const API_BASE = ''; // Uses Next.js rewrites to proxy to Fastify
 
