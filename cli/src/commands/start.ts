@@ -1,18 +1,16 @@
-import { DEFAULT_SERVER_PORT } from '@praefectus/shared';
+import { apiFetch } from '../lib/api-client.js';
 
 export async function start(
   project: string,
   prompt: string,
   options: { skill?: string; role?: string },
 ) {
-  const baseUrl = `http://localhost:${DEFAULT_SERVER_PORT}`;
-
   try {
     const body: Record<string, string> = { projectPath: project, prompt };
     if (options.skill) body.skill = options.skill;
     if (options.role) body.role = options.role;
 
-    const res = await fetch(`${baseUrl}/api/sessions`, {
+    const res = await apiFetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

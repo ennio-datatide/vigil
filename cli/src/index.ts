@@ -38,7 +38,7 @@ program
 program
   .command('auth')
   .description('Check or manage authentication')
-  .argument('[action]', 'Action: status, claude, codex', 'status')
+  .argument('[action]', 'Action: status, token, claude, codex', 'status')
   .action(auth);
 
 program.command('status').description('Show server status').action(status);

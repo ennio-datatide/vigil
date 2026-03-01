@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_PORT } from '@praefectus/shared';
+import { apiFetch } from '../lib/api-client.js';
 
 interface SessionRow {
   id: string;
@@ -8,10 +8,8 @@ interface SessionRow {
 }
 
 export async function ls(options: { all?: boolean }) {
-  const baseUrl = `http://localhost:${DEFAULT_SERVER_PORT}`;
-
   try {
-    const res = await fetch(`${baseUrl}/api/sessions`);
+    const res = await apiFetch('/api/sessions');
 
     if (!res.ok) {
       console.error(`Failed to list sessions: ${res.statusText}`);

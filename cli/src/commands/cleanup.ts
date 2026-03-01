@@ -1,8 +1,8 @@
-import { DEFAULT_SERVER_PORT } from '@praefectus/shared';
+import { apiFetch } from '../lib/api-client.js';
 
 export async function cleanup() {
   try {
-    const res = await fetch(`http://localhost:${DEFAULT_SERVER_PORT}/api/cleanup`, {
+    const res = await apiFetch('/api/cleanup', {
       method: 'POST',
     });
     const data = (await res.json()) as { removed: number; skipped: number };
