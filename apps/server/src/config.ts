@@ -44,6 +44,11 @@ export function resolveConfig(overrides?: Partial<PraefectusConfig>): Praefectus
     writeFileSync(configFilePath, JSON.stringify(toSave, null, 2));
   }
 
+  // Only merge user-facing config fields from the file — never let
+  // computed path fields (dbPath, skillsDir, logsDir, pidFile, configFile)
+  // be overwritten by config.json contents.
+  const { serverPort: fileServerPort, webPort: fileWebPort, telegram, dashboardUrl, worktreeBase } = fileConfig;
+
   return {
     praefectusHome,
     dbPath: join(praefectusHome, 'praefectus.db'),
@@ -51,10 +56,11 @@ export function resolveConfig(overrides?: Partial<PraefectusConfig>): Praefectus
     logsDir: join(praefectusHome, 'logs'),
     pidFile: join(praefectusHome, 'server.pid'),
     configFile: configFilePath,
-    worktreeBase: join(home, 'worktrees'),
-    serverPort: 8000,
-    webPort: 3000,
-    ...fileConfig,
+    worktreeBase: worktreeBase ?? join(home, 'worktrees'),
+    serverPort: fileServerPort ?? 8000,
+    webPort: fileWebPort ?? 3000,
+    ...(telegram && { telegram }),
+    ...(dashboardUrl && { dashboardUrl }),
     ...overrides,
     apiToken,
   };

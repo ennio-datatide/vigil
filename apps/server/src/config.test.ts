@@ -15,6 +15,53 @@ describe('config', () => {
   });
 
   describe('resolveConfig', () => {
+    it('should derive computed paths from praefectusHome', () => {
+      const config = resolveConfig({ praefectusHome: tmpDir });
+      expect(config.praefectusHome).toBe(tmpDir);
+      expect(config.dbPath).toBe(join(tmpDir, 'praefectus.db'));
+      expect(config.skillsDir).toBe(join(tmpDir, 'skills'));
+      expect(config.logsDir).toBe(join(tmpDir, 'logs'));
+      expect(config.pidFile).toBe(join(tmpDir, 'server.pid'));
+      expect(config.configFile).toBe(join(tmpDir, 'config.json'));
+    });
+
+    it('should respect praefectusHome override', () => {
+      const customHome = `${tmpDir}/custom`;
+      mkdirSync(customHome, { recursive: true });
+      const config = resolveConfig({ praefectusHome: customHome });
+      expect(config.praefectusHome).toBe(customHome);
+      expect(config.dbPath).toBe(join(customHome, 'praefectus.db'));
+      expect(config.skillsDir).toBe(join(customHome, 'skills'));
+      expect(config.logsDir).toBe(join(customHome, 'logs'));
+    });
+
+    it('should not let config file clobber computed path fields', () => {
+      const configFile = join(tmpDir, 'config.json');
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          dbPath: '/evil/db.sqlite',
+          skillsDir: '/evil/skills',
+          logsDir: '/evil/logs',
+          pidFile: '/evil/server.pid',
+          configFile: '/evil/config.json',
+          serverPort: 5555,
+        }),
+      );
+
+      const config = resolveConfig({ praefectusHome: tmpDir });
+
+      // Computed paths must always be derived from praefectusHome
+      expect(config.dbPath).toBe(join(tmpDir, 'praefectus.db'));
+      expect(config.skillsDir).toBe(join(tmpDir, 'skills'));
+      expect(config.logsDir).toBe(join(tmpDir, 'logs'));
+      expect(config.pidFile).toBe(join(tmpDir, 'server.pid'));
+      expect(config.configFile).toBe(join(tmpDir, 'config.json'));
+
+      // User-facing fields should still be read from config file
+      expect(config.serverPort).toBe(5555);
+    });
+
     it('should auto-generate apiToken and persist to config file when missing', () => {
       const config = resolveConfig({ praefectusHome: tmpDir });
       expect(config.apiToken).toBeDefined();
