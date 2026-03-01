@@ -100,6 +100,7 @@ cd apps/server && npx vitest
 
 ## Code Quality
 
-- **Biome** -- Linter and formatter. Run `npm run check` before committing.
+- **MANDATORY PRE-COMMIT CHECKS** -- Before EVERY git commit, you MUST run: `npx biome check --write .` then `npm run build` then `npm test`. NO EXCEPTIONS. See `.claude/skills/pre-commit-checks.md`
+- **Biome** -- Linter and formatter. Always run `npx biome check --write .` before committing.
 - **SOLID principles, clean code, TDD** -- see `.claude/skills/code-quality-standards.md`
 - **Bug-driven testing** -- every bug fix starts with a failing test. See `.claude/skills/bug-driven-testing.md`
