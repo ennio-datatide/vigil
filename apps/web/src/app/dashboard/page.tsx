@@ -26,8 +26,8 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-[28px] font-extrabold -tracking-[0.04em] text-text">Dashboard</h1>
           <p className="mt-1 text-[13px] text-text-faint">
-            {activeCount} agent{activeCount !== 1 ? 's' : ''} running across{' '}
-            {projectCount} project{projectCount !== 1 ? 's' : ''}
+            {activeCount} agent{activeCount !== 1 ? 's' : ''} running across {projectCount} project
+            {projectCount !== 1 ? 's' : ''}
           </p>
         </div>
       </div>

@@ -136,7 +136,9 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Dashboard URL</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Dashboard URL
+            </label>
             <input
               type="url"
               value={dashboardUrl}
@@ -164,7 +166,13 @@ export default function SettingsPage() {
                   }`}
                 >
                   {checked ? (
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      className="shrink-0"
+                    >
                       <rect width="14" height="14" rx="3" className="fill-accent" />
                       <path
                         d="M3.5 7L6 9.5L10.5 4.5"
