@@ -55,7 +55,9 @@ export function RecentActivity() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-text-muted">Recent Activity</h2>
+          <h2 className="text-sm font-semibold -tracking-[0.01em] text-text-secondary">
+            Recent Activity
+          </h2>
           <div className="h-px flex-1 bg-border-subtle" />
         </div>
         <Link

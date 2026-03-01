@@ -25,17 +25,21 @@ function sortSessions(sessions: Session[]): Session[] {
   });
 }
 
+const ACTIVE_STATUSES = ['queued', 'running', 'needs_input', 'auth_required'];
+
 export function SessionGrid({ search = '' }: { search?: string }) {
   const sessions = useSessionStore((s) => s.sessions);
   const initialized = useSessionStore((s) => s.initialized);
-  const all = sortSessions(Object.values(sessions));
+  const active = sortSessions(
+    Object.values(sessions).filter((s) => ACTIVE_STATUSES.includes(s.status)),
+  );
   const sorted = search
-    ? all.filter(
+    ? active.filter(
         (s) =>
           s.prompt?.toLowerCase().includes(search.toLowerCase()) ||
           s.projectPath?.toLowerCase().includes(search.toLowerCase()),
       )
-    : all;
+    : active;
 
   if (!initialized) {
     return (
@@ -70,7 +74,9 @@ export function SessionGrid({ search = '' }: { search?: string }) {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text-muted">Active Sessions</h2>
+        <h2 className="text-sm font-semibold -tracking-[0.01em] text-text-secondary">
+          Active Sessions
+        </h2>
         <Link
           href="/dashboard/history"
           className="text-xs text-text-faint hover:text-text-muted transition-colors"
