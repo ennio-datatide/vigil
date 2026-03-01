@@ -5,7 +5,10 @@ describe('pipeline routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-pipelines-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-pipelines-${Date.now()}`,
+      apiToken: undefined,
+    });
   });
 
   afterAll(async () => {
@@ -151,6 +154,7 @@ describe('pipeline routes', () => {
     // Create a fresh app with only the seeded default
     const freshApp = await buildApp({
       praefectusHome: `/tmp/pf-test-pipelines-fresh-${Date.now()}`,
+      apiToken: undefined,
     });
     const list = await freshApp.inject({ method: 'GET', url: '/api/pipelines' });
     const defaultId = list.json()[0].id;

@@ -5,7 +5,10 @@ describe('sessions routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-sessions-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-sessions-${Date.now()}`,
+      apiToken: undefined,
+    });
     // Seed a project
     const { projects } = await import('../db/schema.js');
     app.db

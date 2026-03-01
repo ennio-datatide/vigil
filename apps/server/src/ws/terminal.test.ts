@@ -6,7 +6,10 @@ describe('terminal WebSocket route', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-terminal-ws-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-terminal-ws-${Date.now()}`,
+      apiToken: undefined,
+    });
   });
 
   afterAll(async () => {

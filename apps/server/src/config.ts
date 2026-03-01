@@ -29,10 +29,15 @@ export function resolveConfig(overrides?: Partial<PraefectusConfig>): Praefectus
   // Load persisted config from disk
   const fileConfig = loadConfigFile(configFilePath);
 
-  // Determine apiToken: overrides > config file > auto-generate
-  let apiToken = overrides?.apiToken ?? fileConfig.apiToken;
+  // Determine apiToken: overrides > config file > auto-generate.
+  // If overrides explicitly includes apiToken (even as undefined), honour that
+  // value and skip auto-generation. This lets tests opt out of auth.
+  const overridesHasApiToken = overrides !== undefined && 'apiToken' in overrides;
+  let apiToken = overridesHasApiToken
+    ? overrides?.apiToken
+    : (fileConfig.apiToken as string | undefined);
   let tokenGenerated = false;
-  if (!apiToken) {
+  if (!apiToken && !overridesHasApiToken) {
     apiToken = randomBytes(32).toString('hex');
     tokenGenerated = true;
   }
@@ -47,7 +52,13 @@ export function resolveConfig(overrides?: Partial<PraefectusConfig>): Praefectus
   // Only merge user-facing config fields from the file — never let
   // computed path fields (dbPath, skillsDir, logsDir, pidFile, configFile)
   // be overwritten by config.json contents.
-  const { serverPort: fileServerPort, webPort: fileWebPort, telegram, dashboardUrl, worktreeBase } = fileConfig;
+  const {
+    serverPort: fileServerPort,
+    webPort: fileWebPort,
+    telegram,
+    dashboardUrl,
+    worktreeBase,
+  } = fileConfig;
 
   return {
     praefectusHome,

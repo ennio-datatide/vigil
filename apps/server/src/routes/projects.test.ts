@@ -5,7 +5,10 @@ describe('projects routes', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    app = await buildApp({ praefectusHome: `/tmp/pf-test-projects-${Date.now()}` });
+    app = await buildApp({
+      praefectusHome: `/tmp/pf-test-projects-${Date.now()}`,
+      apiToken: undefined,
+    });
   });
 
   afterAll(async () => {
