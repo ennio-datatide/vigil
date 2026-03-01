@@ -36,6 +36,7 @@ describe('auth hook', () => {
         headers: { authorization: 'Bearer wrong-token' },
       });
       expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'Unauthorized' });
     });
 
     it('GET /api/sessions should return 200 with correct token', async () => {
