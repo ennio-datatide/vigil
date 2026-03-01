@@ -51,7 +51,7 @@ export function KpiBar() {
       {kpis.map((k) => (
         <Tooltip key={k.label} text={k.tip}>
           <div className="rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] p-5 transition-colors hover:bg-surface-hover/30">
-            <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-faint">
+            <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-dim">
               {k.label}
             </p>
             <div className="mt-2 flex items-baseline gap-2">

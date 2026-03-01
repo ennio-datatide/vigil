@@ -49,11 +49,17 @@ export class SessionManager {
     this.bus.on('session_spawned', this.spawnedHandler);
 
     this.spawnFailedHandler = (data) => {
-      updateSessionStatus(this.db, this.bus, data.sessionId, {
-        status: 'failed',
-        endedAt: Date.now(),
-        exitReason: 'error',
-      });
+      updateSessionStatus(
+        this.db,
+        this.bus,
+        data.sessionId,
+        {
+          status: 'failed',
+          endedAt: Date.now(),
+          exitReason: 'error',
+        },
+        `Session failed to start: ${data.error}`,
+      );
       this.emitNotification(data.sessionId, 'error', `Session failed to start: ${data.error}`);
     };
     this.bus.on('session_spawn_failed', this.spawnFailedHandler);
@@ -89,18 +95,29 @@ export class SessionManager {
 
     // Stop hook didn't fire — use process exit code as fallback
     const status = code === 0 ? 'completed' : 'failed';
-    updateSessionStatus(this.db, this.bus, sessionId, {
-      status,
-      endedAt: Date.now(),
-      exitReason: code === 0 ? 'completed' : 'error',
-    });
+    const message =
+      code === 0 ? 'Session completed successfully' : `Session exited with code ${code}`;
+
+    updateSessionStatus(
+      this.db,
+      this.bus,
+      sessionId,
+      {
+        status,
+        endedAt: Date.now(),
+        exitReason: code === 0 ? 'completed' : 'error',
+      },
+      message,
+    );
 
     if (code === 0) {
       this.processChainRules(sessionId);
-      this.emitNotification(sessionId, 'session_done', 'Session completed successfully');
-    } else {
-      this.emitNotification(sessionId, 'error', `Session exited with code ${code}`);
     }
+    this.emitNotification(
+      sessionId,
+      code === 0 ? 'session_done' : 'error',
+      message,
+    );
   }
 
   private handleHookEvent(data: BusEvents['hook_event']): void {
@@ -121,7 +138,7 @@ export class SessionManager {
     const questions = toolInput?.questions as Array<Record<string, unknown>> | undefined;
     const firstQuestion = (questions?.[0]?.question as string) ?? 'Claude needs your input';
 
-    updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' });
+    updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' }, firstQuestion);
     this.emitNotification(sessionId, 'needs_input', firstQuestion);
   }
 
@@ -129,15 +146,17 @@ export class SessionManager {
     const isAuth = containsAuthError(payload);
 
     if (isAuth) {
-      this.db
-        .update(sessions)
-        .set({
+      updateSessionStatus(
+        this.db,
+        this.bus,
+        sessionId,
+        {
           status: 'auth_required',
           endedAt: Date.now(),
           exitReason: 'error',
-        })
-        .where(eq(sessions.id, sessionId))
-        .run();
+        },
+        'Session requires authentication',
+      );
 
       const session = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
 
@@ -155,11 +174,17 @@ export class SessionManager {
           .all();
 
         for (const other of otherRunningSessions) {
-          updateSessionStatus(this.db, this.bus, other.id, {
-            status: 'auth_required',
-            endedAt: Date.now(),
-            exitReason: 'error',
-          });
+          updateSessionStatus(
+            this.db,
+            this.bus,
+            other.id,
+            {
+              status: 'auth_required',
+              endedAt: Date.now(),
+              exitReason: 'error',
+            },
+            'Session requires authentication (related agent auth failure)',
+          );
         }
 
         this.bus.emit('auth_error', {
@@ -168,23 +193,22 @@ export class SessionManager {
         });
       }
     } else {
-      this.db
-        .update(sessions)
-        .set({
+      updateSessionStatus(
+        this.db,
+        this.bus,
+        sessionId,
+        {
           status: 'completed',
           endedAt: Date.now(),
           exitReason: 'completed',
-        })
-        .where(eq(sessions.id, sessionId))
-        .run();
+        },
+        'Session completed successfully',
+      );
 
       this.processChainRules(sessionId);
     }
 
-    const status = isAuth ? 'auth_required' : 'completed';
-    this.bus.emit('session_update', { sessionId, status });
-
-    // Emit notification so Telegram and dashboard are alerted
+    // Emit in-app notification
     const notifType = isAuth ? 'auth_required' : 'session_done';
     const notifMessage = isAuth
       ? 'Session requires authentication'
@@ -206,7 +230,7 @@ export class SessionManager {
     const internalType = isNeedsInput ? 'needs_input' : notificationType;
 
     if (isNeedsInput) {
-      updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' });
+      updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' }, message);
     }
 
     this.emitNotification(sessionId, internalType, message);
@@ -228,7 +252,7 @@ export class SessionManager {
     this.emitNotification('system', 'error', msg);
   }
 
-  /** Persist notification to DB and emit to event bus (Telegram + dashboard). */
+  /** Persist notification to DB and emit to event bus (in-app bell + dashboard). */
   private emitNotification(sessionId: string, type: string, message: string): void {
     this.db.insert(notifications).values({ sessionId, type, message, sentAt: Date.now() }).run();
 

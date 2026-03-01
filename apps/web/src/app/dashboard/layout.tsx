@@ -144,7 +144,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
         <div className={`flex items-center justify-between p-4 ${collapsed ? 'px-2' : ''}`}>
           <PraefectusLogo collapsed={collapsed} />
-          {!collapsed && <NotificationBell />}
         </div>
 
         <nav className={`flex-1 space-y-1 ${collapsed ? 'px-1' : 'px-3'}`}>

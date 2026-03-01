@@ -1,11 +1,9 @@
 import { mkdirSync } from 'node:fs';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { type PraefectusConfig, resolveConfig } from './config.js';
 import { createDb, type Db, initializeSchema } from './db/client.js';
-import { sessions } from './db/schema.js';
 import { registerAuthHook } from './middleware/auth.js';
 import eventsRoute from './routes/events.js';
 import fsRoute from './routes/fs.js';
@@ -48,6 +46,36 @@ declare module 'fastify' {
 }
 
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/** Map session status to the event type names used in Telegram settings filter. */
+function mapStatusToEventType(status: string): string {
+  switch (status) {
+    case 'needs_input':
+      return 'needs_input';
+    case 'auth_required':
+      return 'auth_required';
+    case 'completed':
+      return 'session_done';
+    case 'failed':
+    case 'cancelled':
+    case 'interrupted':
+      return 'error';
+    case 'running':
+      return 'running';
+    case 'queued':
+      return 'queued';
+    default:
+      return status;
+  }
+}
+
+function parseGitMetadata(raw: string): { branch: string; repoName: string; commitHash: string } | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 export async function buildApp(overrides?: Partial<PraefectusConfig>) {
   const config = resolveConfig(overrides);
@@ -106,41 +134,66 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
       : null;
   const notifier = new TelegramNotifier(telegramConfig);
 
-  eventBus.on('notification', (data) => {
+  // Telegram: fire on actual status changes with rich metadata
+  eventBus.on('status_changed', (data) => {
     const tgConfig = settingsService.getTelegramConfig();
-    if (!tgConfig?.enabled || !tgConfig.events.includes(data.type)) return;
+    if (!tgConfig?.enabled) return;
 
-    // Build config for notifier from settings service (not constructor config)
+    // Map status to notification event types for filtering
+    const eventType = mapStatusToEventType(data.newStatus);
+    if (!tgConfig.events.includes(eventType)) return;
+
     notifier.updateConfig({
       botToken: tgConfig.botToken,
       chatId: tgConfig.chatId,
       dashboardUrl: tgConfig.dashboardUrl,
     });
 
-    // System-level notifications (recovery, test) don't have a session row
-    if (data.sessionId === 'system') {
-      notifier
-        .send({
-          sessionId: 'system',
-          type: data.type,
-          projectName: 'Praefectus',
-          prompt: data.message,
-        })
-        .catch((err) => app.log.error(err, 'Telegram notification failed'));
-      return;
-    }
+    const s = data.session;
+    const gitMeta = s.gitMetadata ? parseGitMetadata(s.gitMetadata) : null;
+    const duration =
+      s.startedAt && s.endedAt
+        ? TelegramNotifier.formatDuration(s.endedAt - s.startedAt)
+        : s.startedAt
+          ? TelegramNotifier.formatDuration(Date.now() - s.startedAt)
+          : undefined;
 
-    const session = db.select().from(sessions).where(eq(sessions.id, data.sessionId)).get();
-    if (session) {
-      notifier
-        .send({
-          sessionId: data.sessionId,
-          type: data.type,
-          projectName: session.projectPath.split('/').pop() ?? session.projectPath,
-          prompt: session.prompt,
-        })
-        .catch((err) => app.log.error(err, 'Telegram notification failed'));
-    }
+    notifier
+      .send({
+        sessionId: s.id,
+        type: eventType,
+        projectName: s.projectPath.split('/').pop() ?? s.projectPath,
+        prompt: s.prompt,
+        oldStatus: data.oldStatus,
+        newStatus: data.newStatus,
+        agentType: s.agentType,
+        gitBranch: gitMeta?.branch,
+        duration,
+        message: data.message,
+      })
+      .catch((err) => app.log.error(err, 'Telegram notification failed'));
+  });
+
+  // Keep in-app notification listener for system-level alerts (recovery, test)
+  eventBus.on('notification', (data) => {
+    if (data.sessionId !== 'system') return;
+    const tgConfig = settingsService.getTelegramConfig();
+    if (!tgConfig?.enabled || !tgConfig.events.includes(data.type)) return;
+
+    notifier.updateConfig({
+      botToken: tgConfig.botToken,
+      chatId: tgConfig.chatId,
+      dashboardUrl: tgConfig.dashboardUrl,
+    });
+
+    notifier
+      .send({
+        sessionId: 'system',
+        type: data.type,
+        projectName: 'Praefectus',
+        prompt: data.message,
+      })
+      .catch((err) => app.log.error(err, 'Telegram notification failed'));
   });
 
   const app = Fastify({ logger: true });

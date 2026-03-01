@@ -25,10 +25,17 @@ function sortSessions(sessions: Session[]): Session[] {
   });
 }
 
-export function SessionGrid() {
+export function SessionGrid({ search = '' }: { search?: string }) {
   const sessions = useSessionStore((s) => s.sessions);
   const initialized = useSessionStore((s) => s.initialized);
-  const sorted = sortSessions(Object.values(sessions));
+  const all = sortSessions(Object.values(sessions));
+  const sorted = search
+    ? all.filter(
+        (s) =>
+          s.prompt?.toLowerCase().includes(search.toLowerCase()) ||
+          s.projectPath?.toLowerCase().includes(search.toLowerCase()),
+      )
+    : all;
 
   if (!initialized) {
     return (

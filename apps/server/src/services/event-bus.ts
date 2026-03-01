@@ -1,7 +1,25 @@
 import { EventEmitter } from 'node:events';
 
+export interface SessionRow {
+  id: string;
+  projectPath: string;
+  prompt: string;
+  status: string;
+  agentType: string;
+  gitMetadata: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  exitReason: string | null;
+}
+
 export interface BusEvents {
   session_update: { sessionId: string; status: string; [key: string]: unknown };
+  status_changed: {
+    session: SessionRow;
+    oldStatus: string;
+    newStatus: string;
+    message?: string;
+  };
   hook_event: {
     sessionId: string;
     eventType: string;

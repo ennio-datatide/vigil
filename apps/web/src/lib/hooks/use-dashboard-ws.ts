@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef } from 'react';
+import { useSessionsQuery } from '../api';
 import { useSessionStore } from '../stores/session-store';
 import type { WsMessage } from '../types';
 import { wsUrl } from '../ws-url';
@@ -9,6 +10,16 @@ export function useDashboardWs() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
   const { setSession, removeSession, syncAll } = useSessionStore();
+  const initialized = useSessionStore((s) => s.initialized);
+
+  // REST fallback: fetch sessions immediately so dashboard loads even if WS is slow
+  const { data: restSessions } = useSessionsQuery();
+
+  useEffect(() => {
+    if (restSessions && !initialized) {
+      syncAll(restSessions);
+    }
+  }, [restSessions, initialized, syncAll]);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(wsUrl('/ws/dashboard'));

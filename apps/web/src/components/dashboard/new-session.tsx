@@ -159,7 +159,7 @@ export function NewSession() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="btn-press glass fixed bottom-4 left-3 z-40 hidden w-[calc(14rem-1.5rem)] items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10 md:flex"
+        className="btn-press fixed bottom-4 left-3 z-40 hidden w-[calc(14rem-1.5rem)] items-center justify-center gap-2 rounded-xl bg-accent px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20 transition-colors hover:bg-accent-hover md:flex"
       >
         <svg
           width="16"
@@ -174,9 +174,6 @@ export function NewSession() {
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
         New Session
-        <kbd className="ml-auto rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
-          &#8984;N
-        </kbd>
       </button>
 
       {/* Mobile: FAB bottom-right — hidden on session pages to avoid overlapping terminal input */}

@@ -97,7 +97,7 @@ describe('TelegramNotifier', () => {
     expect(body).toContain('\u{2705}');
   });
 
-  it('should truncate prompt to 100 chars', async () => {
+  it('should truncate prompt to 120 chars', async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const notifier = new TelegramNotifier(defaultConfig, mockFetch);
 
@@ -111,9 +111,9 @@ describe('TelegramNotifier', () => {
     });
 
     const body = mockFetch.mock.calls[0][1].body;
-    // The body should contain exactly 100 A's, not 200
-    expect(body).toContain('A'.repeat(100));
-    expect(body).not.toContain('A'.repeat(101));
+    // The body should contain exactly 120 A's, not 200
+    expect(body).toContain('A'.repeat(120));
+    expect(body).not.toContain('A'.repeat(121));
   });
 
   it('should include dashboard URL with session ID link', async () => {

@@ -9,6 +9,12 @@ interface NotificationParams {
   type: string;
   projectName: string;
   prompt: string;
+  oldStatus?: string;
+  newStatus?: string;
+  agentType?: string;
+  gitBranch?: string;
+  duration?: string;
+  message?: string;
 }
 
 export interface DigestProject {
@@ -34,6 +40,15 @@ function emojiFor(type: string): string {
   return EMOJI[type] ?? '\u{2705}';
 }
 
+function formatDuration(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ${secs % 60}s`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
+}
+
 export class TelegramNotifier {
   constructor(
     private config: TelegramConfig | null,
@@ -47,15 +62,39 @@ export class TelegramNotifier {
   async send(params: NotificationParams): Promise<void> {
     if (!this.config) return;
 
-    const text = [
-      `${emojiFor(params.type)} Session ${params.type.replaceAll('_', ' ')}`,
-      `Project: ${params.projectName}`,
-      `Task: ${params.prompt.slice(0, 100)}`,
+    const statusLabel = (params.newStatus ?? params.type).replaceAll('_', ' ');
+    const lines: string[] = [
+      `${emojiFor(params.newStatus ?? params.type)} <b>${statusLabel}</b>`,
       '',
-      `${this.config.dashboardUrl}/dashboard/sessions/${params.sessionId}`,
-    ].join('\n');
+      `<b>Project:</b> ${params.projectName}`,
+      `<b>Task:</b> ${params.prompt.slice(0, 120)}`,
+    ];
 
-    await this.sendRaw(text);
+    if (params.oldStatus && params.newStatus) {
+      lines.push(
+        `<b>Status:</b> ${params.oldStatus.replaceAll('_', ' ')} → ${params.newStatus.replaceAll('_', ' ')}`,
+      );
+    }
+
+    if (params.agentType) {
+      lines.push(`<b>Agent:</b> ${params.agentType}`);
+    }
+
+    if (params.gitBranch) {
+      lines.push(`<b>Branch:</b> ${params.gitBranch}`);
+    }
+
+    if (params.duration) {
+      lines.push(`<b>Duration:</b> ${params.duration}`);
+    }
+
+    if (params.message) {
+      lines.push('', `💬 ${params.message.slice(0, 200)}`);
+    }
+
+    lines.push('', `${this.config.dashboardUrl}/dashboard/sessions/${params.sessionId}`);
+
+    await this.sendRaw(lines.join('\n'));
   }
 
   async sendDigest(projects: DigestProject[]): Promise<void> {
@@ -106,4 +145,6 @@ export class TelegramNotifier {
       throw new Error(`Telegram API error ${res.status}: ${body}`);
     }
   }
+
+  static formatDuration = formatDuration;
 }
