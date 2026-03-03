@@ -19,7 +19,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
   const res = await fetch(`${API_BASE}${url}`, { ...init, headers });
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/dashboard/auth')) {
       window.location.href = '/dashboard/auth';
     }
     throw new Error('Unauthorized');
