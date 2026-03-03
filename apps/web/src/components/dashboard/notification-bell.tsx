@@ -2,15 +2,22 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
-import { useMarkNotificationRead, useNotificationsQuery } from '@/lib/api';
+import { useMarkAllNotificationsRead, useNotificationsQuery } from '@/lib/api';
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { data: notifications = [] } = useNotificationsQuery(false);
-  const markRead = useMarkNotificationRead();
+  const markAllRead = useMarkAllNotificationsRead();
 
   const unread = notifications.filter((n) => !n.readAt).length;
+
+  // Mark all as read when dropdown opens
+  useEffect(() => {
+    if (open && unread > 0) {
+      markAllRead.mutate();
+    }
+  }, [open, unread, markAllRead.mutate]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -67,23 +74,12 @@ export function NotificationBell() {
             ) : (
               <div className="max-h-60 space-y-0.5 overflow-y-auto">
                 {notifications.map((n) => (
-                  <button
-                    type="button"
+                  <div
                     key={n.id}
-                    onClick={() => {
-                      if (!n.readAt) markRead.mutate(n.id);
-                    }}
-                    className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-surface-hover ${
-                      n.readAt ? 'text-text-muted' : 'text-text'
-                    }`}
+                    className="w-full rounded-lg px-3 py-2 text-left text-xs text-text-muted"
                   >
-                    <span className="flex items-start gap-2">
-                      {!n.readAt && (
-                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                      )}
-                      <span className={!n.readAt ? '' : 'pl-3.5'}>{n.message}</span>
-                    </span>
-                  </button>
+                    {n.message}
+                  </div>
                 ))}
               </div>
             )}

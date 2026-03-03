@@ -115,6 +115,14 @@ export function useMarkNotificationRead() {
   });
 }
 
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => fetchJson('/api/notifications/read-all', { method: 'PATCH' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+}
+
 export function useTelegramSettingsQuery() {
   return useQuery({
     queryKey: ['telegram-settings'],
