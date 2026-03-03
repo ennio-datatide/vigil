@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && cp -r src/hooks dist/hooks",
+    "build": "tsc && mkdir -p dist/hooks && cp src/hooks/emit-event.sh dist/hooks/ && cp -r src/hooks/templates dist/hooks/",
     "lint": "biome lint ./src",
     "test": "vitest run",
     "test:watch": "vitest",
