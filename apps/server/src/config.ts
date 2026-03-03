@@ -1,5 +1,4 @@
-import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,25 +28,12 @@ export function resolveConfig(overrides?: Partial<PraefectusConfig>): Praefectus
   // Load persisted config from disk
   const fileConfig = loadConfigFile(configFilePath);
 
-  // Determine apiToken: overrides > config file > auto-generate.
-  // If overrides explicitly includes apiToken (even as undefined), honour that
-  // value and skip auto-generation. This lets tests opt out of auth.
-  const overridesHasApiToken = overrides !== undefined && 'apiToken' in overrides;
-  let apiToken = overridesHasApiToken
-    ? overrides?.apiToken
-    : (fileConfig.apiToken as string | undefined);
-  let tokenGenerated = false;
-  if (!apiToken && !overridesHasApiToken) {
-    apiToken = randomBytes(32).toString('hex');
-    tokenGenerated = true;
-  }
-
-  // Persist newly generated token to config.json
-  if (tokenGenerated) {
-    mkdirSync(praefectusHome, { recursive: true });
-    const toSave = { ...fileConfig, apiToken };
-    writeFileSync(configFilePath, JSON.stringify(toSave, null, 2));
-  }
+  // apiToken: overrides > config file > undefined (no auth).
+  // Set apiToken in ~/.praefectus/config.json to enable auth.
+  const apiToken =
+    overrides !== undefined && 'apiToken' in overrides
+      ? overrides?.apiToken
+      : (fileConfig.apiToken as string | undefined);
 
   // Only merge user-facing config fields from the file — never let
   // computed path fields (dbPath, skillsDir, logsDir, pidFile, configFile)
