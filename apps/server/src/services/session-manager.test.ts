@@ -439,6 +439,18 @@ describe('SessionManager', () => {
     it('should skip if session does not exist', () => {
       expect(() => manager.handleProcessExit('nonexistent', 0)).not.toThrow();
     });
+
+    it('should only emit session_done notification on exit code 0, not error on non-zero', () => {
+      insertSession(db, { id: 'sess-notif-exit', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      manager.handleProcessExit('sess-notif-exit', 1);
+
+      // No notification should be emitted for failed sessions
+      expect(notificationHandler).not.toHaveBeenCalled();
+    });
   });
 
   describe('Notification hook event', () => {
