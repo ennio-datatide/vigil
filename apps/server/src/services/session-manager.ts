@@ -212,23 +212,17 @@ export class SessionManager {
   }
 
   private handleNotificationEvent(sessionId: string, payload: Record<string, unknown>): void {
-    // Claude Code Notification hook sends `notification_type` (e.g., 'elicitation_dialog',
-    // 'permission_prompt'). Legacy/internal events use `type`. Support both.
     const notificationType =
       (payload.notification_type as string) ?? (payload.type as string) ?? 'info';
     const message = (payload.message as string) ?? '';
 
-    // Map Claude Code notification types to our internal types
     const isNeedsInput =
       notificationType === 'needs_input' || NEEDS_INPUT_TYPES.includes(notificationType);
 
-    const internalType = isNeedsInput ? 'needs_input' : notificationType;
-
     if (isNeedsInput) {
       updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' }, message);
+      this.emitNotification(sessionId, 'needs_input', message);
     }
-
-    this.emitNotification(sessionId, internalType, message);
   }
 
   /** Persist notification to DB and emit to event bus (in-app bell + dashboard). */
