@@ -35,6 +35,18 @@ const notificationsRoute: FastifyPluginAsync = async (app) => {
     return { ok: true, message: 'Test notification sent' };
   });
 
+  // Mark all notifications as read (bulk)
+  app.patch('/api/notifications/read-all', async () => {
+    const now = Date.now();
+    const result = app.db
+      .update(notifications)
+      .set({ readAt: now })
+      .where(isNull(notifications.readAt))
+      .run();
+
+    return { updated: result.changes };
+  });
+
   // Mark a notification as read
   app.patch<{ Params: { id: string } }>('/api/notifications/:id/read', async (request, reply) => {
     const id = Number(request.params.id);

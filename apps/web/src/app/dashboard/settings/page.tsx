@@ -7,9 +7,8 @@ import { useToast } from '@/lib/stores/toast-store';
 
 const EVENT_OPTIONS = [
   { key: 'needs_input', label: 'Needs Input', desc: 'Agent is waiting for user input' },
-  { key: 'error', label: 'Error', desc: 'Session failed with an error' },
   { key: 'auth_required', label: 'Auth Required', desc: 'Agent needs re-authentication' },
-  { key: 'completed', label: 'Completed', desc: 'Session finished successfully' },
+  { key: 'session_done', label: 'Completed', desc: 'Session finished successfully' },
 ];
 
 export default function SettingsPage() {
@@ -27,7 +26,7 @@ export default function SettingsPage() {
   const [chatId, setChatId] = useState('');
   const [dashboardUrl, setDashboardUrl] = useState('');
   const [enabled, setEnabled] = useState(false);
-  const [events, setEvents] = useState<string[]>(['needs_input', 'error', 'auth_required']);
+  const [events, setEvents] = useState<string[]>(['needs_input', 'auth_required', 'session_done']);
 
   // Populate form when data loads
   useEffect(() => {
@@ -36,7 +35,7 @@ export default function SettingsPage() {
       setChatId(telegram.chatId ?? '');
       setDashboardUrl(telegram.dashboardUrl ?? '');
       setEnabled(telegram.enabled ?? false);
-      setEvents(telegram.events ?? ['needs_input', 'error', 'auth_required']);
+      setEvents(telegram.events ?? ['needs_input', 'auth_required', 'session_done']);
     }
   }, [telegram]);
 

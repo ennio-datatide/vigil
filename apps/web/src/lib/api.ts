@@ -19,7 +19,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
   const res = await fetch(`${API_BASE}${url}`, { ...init, headers });
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/dashboard/auth')) {
       window.location.href = '/dashboard/auth';
     }
     throw new Error('Unauthorized');
@@ -111,6 +111,14 @@ export function useMarkNotificationRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => fetchJson(`/api/notifications/${id}/read`, { method: 'PATCH' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+}
+
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => fetchJson('/api/notifications/read-all', { method: 'PATCH' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }

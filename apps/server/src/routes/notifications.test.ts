@@ -78,4 +78,36 @@ describe('notifications routes', () => {
     expect(body.readAt).toBeTypeOf('number');
     expect(body.id).toBe(unreadNotification.id);
   });
+
+  it('PATCH /api/notifications/read-all should mark all unread notifications as read', async () => {
+    // Insert two unread notifications
+    app.db
+      .insert(notifications)
+      .values({
+        sessionId: 'sess-bulk-1',
+        type: 'needs_input',
+        message: 'First unread',
+        sentAt: Date.now(),
+      })
+      .run();
+
+    app.db
+      .insert(notifications)
+      .values({
+        sessionId: 'sess-bulk-2',
+        type: 'session_done',
+        message: 'Second unread',
+        sentAt: Date.now(),
+      })
+      .run();
+
+    const res = await app.inject({ method: 'PATCH', url: '/api/notifications/read-all' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.updated).toBeGreaterThanOrEqual(2);
+
+    // Verify all are now read
+    const unread = await app.inject({ method: 'GET', url: '/api/notifications?unread=true' });
+    expect(unread.json()).toHaveLength(0);
+  });
 });

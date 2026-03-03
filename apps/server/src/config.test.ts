@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfigFile, resolveConfig } from './config.js';
@@ -62,16 +62,9 @@ describe('config', () => {
       expect(config.serverPort).toBe(5555);
     });
 
-    it('should auto-generate apiToken and persist to config file when missing', () => {
+    it('should leave apiToken undefined when not set in config', () => {
       const config = resolveConfig({ praefectusHome: tmpDir });
-      expect(config.apiToken).toBeDefined();
-      expect(config.apiToken).toHaveLength(64); // 32 bytes = 64 hex chars
-
-      // Token should be persisted to config.json
-      const configFile = join(tmpDir, 'config.json');
-      expect(existsSync(configFile)).toBe(true);
-      const saved = JSON.parse(readFileSync(configFile, 'utf-8'));
-      expect(saved.apiToken).toBe(config.apiToken);
+      expect(config.apiToken).toBeUndefined();
     });
 
     it('should reuse existing apiToken from config file', () => {

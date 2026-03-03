@@ -60,7 +60,6 @@ export class SessionManager {
         },
         `Session failed to start: ${data.error}`,
       );
-      this.emitNotification(data.sessionId, 'error', `Session failed to start: ${data.error}`);
     };
     this.bus.on('session_spawn_failed', this.spawnFailedHandler);
   }
@@ -112,8 +111,8 @@ export class SessionManager {
 
     if (code === 0) {
       this.processChainRules(sessionId);
+      this.emitNotification(sessionId, 'session_done', message);
     }
-    this.emitNotification(sessionId, code === 0 ? 'session_done' : 'error', message);
   }
 
   private handleHookEvent(data: BusEvents['hook_event']): void {
@@ -213,39 +212,17 @@ export class SessionManager {
   }
 
   private handleNotificationEvent(sessionId: string, payload: Record<string, unknown>): void {
-    // Claude Code Notification hook sends `notification_type` (e.g., 'elicitation_dialog',
-    // 'permission_prompt'). Legacy/internal events use `type`. Support both.
     const notificationType =
       (payload.notification_type as string) ?? (payload.type as string) ?? 'info';
     const message = (payload.message as string) ?? '';
 
-    // Map Claude Code notification types to our internal types
     const isNeedsInput =
       notificationType === 'needs_input' || NEEDS_INPUT_TYPES.includes(notificationType);
 
-    const internalType = isNeedsInput ? 'needs_input' : notificationType;
-
     if (isNeedsInput) {
       updateSessionStatus(this.db, this.bus, sessionId, { status: 'needs_input' }, message);
+      this.emitNotification(sessionId, 'needs_input', message);
     }
-
-    this.emitNotification(sessionId, internalType, message);
-  }
-
-  /** Notify that a session was cancelled by user. */
-  notifyCancelled(sessionId: string): void {
-    this.emitNotification(sessionId, 'error', 'Session cancelled by user');
-  }
-
-  /** Notify that sessions were interrupted (e.g. server restart). */
-  notifyInterrupted(count: number): void {
-    if (count === 0) return;
-    // Use a generic session ID — this is a system-level notification
-    const msg =
-      count === 1
-        ? '1 session was interrupted by server restart'
-        : `${count} sessions were interrupted by server restart`;
-    this.emitNotification('system', 'error', msg);
   }
 
   /** Persist notification to DB and emit to event bus (in-app bell + dashboard). */

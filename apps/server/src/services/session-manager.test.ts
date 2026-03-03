@@ -439,6 +439,18 @@ describe('SessionManager', () => {
     it('should skip if session does not exist', () => {
       expect(() => manager.handleProcessExit('nonexistent', 0)).not.toThrow();
     });
+
+    it('should only emit session_done notification on exit code 0, not error on non-zero', () => {
+      insertSession(db, { id: 'sess-notif-exit', status: 'running' });
+
+      const notificationHandler = vi.fn();
+      bus.on('notification', notificationHandler);
+
+      manager.handleProcessExit('sess-notif-exit', 1);
+
+      // No notification should be emitted for failed sessions
+      expect(notificationHandler).not.toHaveBeenCalled();
+    });
   });
 
   describe('Notification hook event', () => {
@@ -471,7 +483,7 @@ describe('SessionManager', () => {
       });
     });
 
-    it('should emit notification for non-needs_input types without changing status', () => {
+    it('should NOT emit notification for non-needs_input types', () => {
       manager.start();
       insertSession(db, { id: 'sess-info', status: 'running' });
 
@@ -493,11 +505,8 @@ describe('SessionManager', () => {
         .get();
       expect(session?.status).toBe('running');
 
-      expect(notificationHandler).toHaveBeenCalledWith({
-        sessionId: 'sess-info',
-        type: 'error',
-        message: 'Something went wrong',
-      });
+      // Non-needs_input notification types should be ignored
+      expect(notificationHandler).not.toHaveBeenCalled();
     });
 
     it('should mark session as needs_input on Notification with notification_type elicitation_dialog', () => {
@@ -601,7 +610,7 @@ describe('SessionManager', () => {
       });
     });
 
-    it('should not change session status for auth_success notification_type', () => {
+    it('should not emit notification for auth_success notification_type', () => {
       manager.start();
       insertSession(db, { id: 'sess-auth-ok', status: 'running' });
 
@@ -627,11 +636,7 @@ describe('SessionManager', () => {
         .get();
       expect(session?.status).toBe('running');
 
-      expect(notificationHandler).toHaveBeenCalledWith({
-        sessionId: 'sess-auth-ok',
-        type: 'auth_success',
-        message: 'Authentication successful',
-      });
+      expect(notificationHandler).not.toHaveBeenCalled();
     });
   });
 
