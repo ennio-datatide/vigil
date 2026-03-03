@@ -114,10 +114,9 @@ export async function buildApp(overrides?: Partial<PraefectusConfig>) {
     (sessionId, code) => sessionManager.handleProcessExit(sessionId, code),
   );
 
-  // Recovery: mark orphaned sessions as interrupted and notify
+  // Recovery: mark orphaned sessions as interrupted
   const recovery = new RecoveryService(db);
-  const { interrupted } = await recovery.recover();
-  sessionManager.notifyInterrupted(interrupted);
+  await recovery.recover();
 
   // Cleanup: periodic worktree garbage collection
   const cleanupService = new CleanupService(db, worktreeManager);
