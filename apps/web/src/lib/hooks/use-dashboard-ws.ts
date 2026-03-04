@@ -10,16 +10,14 @@ export function useDashboardWs() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
   const { setSession, removeSession, syncAll } = useSessionStore();
-  const initialized = useSessionStore((s) => s.initialized);
-
   // REST fallback: fetch sessions immediately so dashboard loads even if WS is slow
   const { data: restSessions } = useSessionsQuery();
 
   useEffect(() => {
-    if (restSessions && !initialized) {
+    if (restSessions) {
       syncAll(restSessions);
     }
-  }, [restSessions, initialized, syncAll]);
+  }, [restSessions, syncAll]);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(wsUrl('/ws/dashboard'));
