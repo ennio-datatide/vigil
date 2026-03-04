@@ -32,6 +32,7 @@ export function useSessionsQuery() {
   return useQuery({
     queryKey: ['sessions'],
     queryFn: () => fetchJson<Session[]>('/api/sessions'),
+    refetchOnMount: 'always',
   });
 }
 

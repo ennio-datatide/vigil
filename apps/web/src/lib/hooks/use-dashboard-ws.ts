@@ -9,8 +9,10 @@ export function useDashboardWs() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
+  const unmountedRef = useRef(false);
   const { setSession, removeSession, syncAll } = useSessionStore();
-  // REST fallback: fetch sessions immediately so dashboard loads even if WS is slow
+
+  // REST: always fetch fresh sessions on mount so dashboard is never stale
   const { data: restSessions } = useSessionsQuery();
 
   useEffect(() => {
@@ -20,6 +22,8 @@ export function useDashboardWs() {
   }, [restSessions, syncAll]);
 
   const connect = useCallback(() => {
+    if (unmountedRef.current) return;
+
     const ws = new WebSocket(wsUrl('/ws/dashboard'));
     wsRef.current = ws;
 
@@ -43,7 +47,7 @@ export function useDashboardWs() {
     };
 
     ws.onclose = () => {
-      // Exponential backoff reconnect
+      if (unmountedRef.current) return;
       const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 30000);
       reconnectAttemptRef.current++;
       reconnectTimeoutRef.current = setTimeout(connect, delay);
@@ -55,8 +59,10 @@ export function useDashboardWs() {
   }, [setSession, removeSession, syncAll]);
 
   useEffect(() => {
+    unmountedRef.current = false;
     connect();
     return () => {
+      unmountedRef.current = true;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       wsRef.current?.close();
     };
