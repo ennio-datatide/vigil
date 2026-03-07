@@ -26,7 +26,14 @@ struct ProjectVigil {
     project_path: String,
     /// Whether the Vigil has been initialized.
     active: bool,
+    /// Cached acta content (project briefing).
+    acta: Option<String>,
+    /// When the acta was last refreshed (Unix ms).
+    acta_refreshed_at: Option<i64>,
 }
+
+/// Minimum interval between acta regenerations (5 minutes).
+const ACTA_REFRESH_INTERVAL_MS: i64 = 5 * 60 * 1000;
 
 /// Manages Vigil instances across all projects.
 pub(crate) struct VigilService {
@@ -111,6 +118,8 @@ impl VigilService {
                 ProjectVigil {
                     project_path: project_path.to_owned(),
                     active: true,
+                    acta: None,
+                    acta_refreshed_at: None,
                 },
             );
         }
@@ -172,7 +181,152 @@ impl VigilService {
             project = %session.project_path,
             "vigil: recorded session completion"
         );
+
+        // Check if the acta should be refreshed.
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let should_refresh = {
+            let vigils = self.vigils.lock().await;
+            vigils.get(&session.project_path).is_none_or(|v| {
+                v.acta_refreshed_at
+                    .is_none_or(|t| now_ms - t > ACTA_REFRESH_INTERVAL_MS)
+            })
+        };
+
+        if should_refresh {
+            let acta = self.generate_acta(&session.project_path).await?;
+            self.update_acta(&session.project_path, &acta).await?;
+            tracing::debug!(
+                project = %session.project_path,
+                "vigil: refreshed acta"
+            );
+        }
+
         Ok(())
+    }
+
+    /// Get the cached acta for a project, loading from KV store if not cached.
+    pub(crate) async fn get_acta(&self, project_path: &str) -> Option<String> {
+        // First check the in-memory cache.
+        let vigils = self.vigils.lock().await;
+        if let Some(vigil) = vigils.get(project_path)
+            && let Some(acta) = &vigil.acta
+        {
+            return Some(acta.clone());
+        }
+        drop(vigils);
+
+        // Fall back to KV store.
+        let key = format!("acta:{project_path}");
+        self.kv.get(&key).ok().flatten()
+    }
+
+    /// Update the acta for a project.
+    pub(crate) async fn update_acta(
+        &self,
+        project_path: &str,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        // Save to KV store for persistence.
+        let key = format!("acta:{project_path}");
+        self.kv.set(&key, content)?;
+
+        // Update in-memory cache.
+        let mut vigils = self.vigils.lock().await;
+        if let Some(vigil) = vigils.get_mut(project_path) {
+            vigil.acta = Some(content.to_owned());
+            vigil.acta_refreshed_at = Some(chrono::Utc::now().timestamp_millis());
+        }
+
+        // Emit acta refreshed event.
+        let _ = self.event_bus.emit(AppEvent::ActaRefreshed {
+            project_path: project_path.to_owned(),
+        });
+
+        Ok(())
+    }
+
+    /// Generate a basic acta from project memories.
+    ///
+    /// This is a non-LLM synthesis — it concatenates the most important memories
+    /// into a structured briefing. For LLM-powered synthesis, the Vigil agent
+    /// would call this and refine it.
+    pub(crate) async fn generate_acta(&self, project_path: &str) -> anyhow::Result<String> {
+        // Fetch all memories for the project.
+        let memories = self.memory_store.list(project_path).await?;
+
+        if memories.is_empty() {
+            return Ok(format!(
+                "# Project Briefing: {project_path}\n\nNo memories recorded yet."
+            ));
+        }
+
+        // Sort by importance (descending), take top 20.
+        let mut sorted = memories;
+        sorted.sort_by(|a, b| {
+            b.importance
+                .partial_cmp(&a.importance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let top = sorted.into_iter().take(20);
+
+        // Group by memory type and format.
+        let mut decisions = Vec::new();
+        let mut patterns = Vec::new();
+        let mut facts = Vec::new();
+        let mut preferences = Vec::new();
+        let mut todos = Vec::new();
+
+        for mem in top {
+            match mem.memory_type {
+                crate::db::models::MemoryType::Decision => decisions.push(mem.content),
+                crate::db::models::MemoryType::Pattern => patterns.push(mem.content),
+                crate::db::models::MemoryType::Fact | crate::db::models::MemoryType::Failure => {
+                    facts.push(mem.content);
+                }
+                crate::db::models::MemoryType::Preference => preferences.push(mem.content),
+                crate::db::models::MemoryType::Todo => todos.push(mem.content),
+            }
+        }
+
+        let mut sections = vec![format!("# Project Briefing: {project_path}\n")];
+
+        if !decisions.is_empty() {
+            sections.push("## Key Decisions".to_owned());
+            for d in &decisions {
+                sections.push(format!("- {d}"));
+            }
+            sections.push(String::new());
+        }
+        if !patterns.is_empty() {
+            sections.push("## Patterns".to_owned());
+            for p in &patterns {
+                sections.push(format!("- {p}"));
+            }
+            sections.push(String::new());
+        }
+        if !facts.is_empty() {
+            sections.push("## Facts".to_owned());
+            for f in &facts {
+                sections.push(format!("- {f}"));
+            }
+            sections.push(String::new());
+        }
+        if !preferences.is_empty() {
+            sections.push("## Preferences".to_owned());
+            for p in &preferences {
+                sections.push(format!("- {p}"));
+            }
+            sections.push(String::new());
+        }
+        if !todos.is_empty() {
+            sections.push("## Outstanding TODOs".to_owned());
+            for t in &todos {
+                sections.push(format!("- [ ] {t}"));
+            }
+            sections.push(String::new());
+        }
+
+        Ok(sections.join("\n"))
     }
 
     /// Get the [`VigilDeps`] for building an agent (used by API routes).
@@ -425,5 +579,138 @@ mod tests {
         assert_eq!(truncate(s, 5), "abcde");
         let result = truncate(s, 4);
         assert!(result.ends_with("..."));
+    }
+
+    // -----------------------------------------------------------------------
+    // Acta tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_acta_returns_none_for_unknown_project() {
+        let (service, _db, _bus, _dir) = test_deps().await;
+
+        // No vigil started, no KV entry — should return None.
+        let result = service.get_acta("/tmp/unknown-project").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_and_get_acta() {
+        let (service, _db, _bus, _dir) = test_deps().await;
+
+        let project = "/tmp/acta-project";
+        service.ensure_vigil(project).await;
+
+        service
+            .update_acta(project, "Test acta content")
+            .await
+            .unwrap();
+
+        let acta = service.get_acta(project).await;
+        assert_eq!(acta.as_deref(), Some("Test acta content"));
+    }
+
+    #[tokio::test]
+    async fn generate_acta_empty_project() {
+        let (service, _db, _bus, _dir) = test_deps().await;
+
+        let project = "/tmp/empty-project";
+        let acta = service.generate_acta(project).await.unwrap();
+
+        assert!(acta.contains("# Project Briefing: /tmp/empty-project"));
+        assert!(acta.contains("No memories recorded yet."));
+    }
+
+    #[tokio::test]
+    async fn generate_acta_with_memories() {
+        let (service, _db, _bus, _dir) = test_deps().await;
+        use crate::db::models::MemoryType;
+        use crate::services::memory_store::CreateMemoryInput;
+
+        let project = "/tmp/acta-gen-project";
+
+        // Create memories of different types.
+        let inputs = vec![
+            CreateMemoryInput {
+                content: "Use async/await everywhere".to_owned(),
+                memory_type: MemoryType::Decision,
+                project_path: project.to_owned(),
+                source_session_id: None,
+                importance: Some(0.9),
+            },
+            CreateMemoryInput {
+                content: "Always run clippy before commit".to_owned(),
+                memory_type: MemoryType::Pattern,
+                project_path: project.to_owned(),
+                source_session_id: None,
+                importance: Some(0.8),
+            },
+            CreateMemoryInput {
+                content: "Database uses SQLite via sqlx".to_owned(),
+                memory_type: MemoryType::Fact,
+                project_path: project.to_owned(),
+                source_session_id: None,
+                importance: Some(0.7),
+            },
+            CreateMemoryInput {
+                content: "Prefer thiserror over manual impls".to_owned(),
+                memory_type: MemoryType::Preference,
+                project_path: project.to_owned(),
+                source_session_id: None,
+                importance: Some(0.6),
+            },
+            CreateMemoryInput {
+                content: "Add integration tests for API".to_owned(),
+                memory_type: MemoryType::Todo,
+                project_path: project.to_owned(),
+                source_session_id: None,
+                importance: Some(0.5),
+            },
+        ];
+
+        for input in &inputs {
+            service.memory_store.create(input).await.unwrap();
+        }
+
+        let acta = service.generate_acta(project).await.unwrap();
+
+        // Verify the acta contains all section headers and content.
+        assert!(acta.contains("# Project Briefing:"));
+        assert!(acta.contains("## Key Decisions"));
+        assert!(acta.contains("Use async/await everywhere"));
+        assert!(acta.contains("## Patterns"));
+        assert!(acta.contains("Always run clippy before commit"));
+        assert!(acta.contains("## Facts"));
+        assert!(acta.contains("Database uses SQLite via sqlx"));
+        assert!(acta.contains("## Preferences"));
+        assert!(acta.contains("Prefer thiserror over manual impls"));
+        assert!(acta.contains("## Outstanding TODOs"));
+        assert!(acta.contains("- [ ] Add integration tests for API"));
+    }
+
+    #[tokio::test]
+    async fn acta_persists_in_kv() {
+        let (service, _db, _bus, _dir) = test_deps().await;
+
+        let project = "/tmp/kv-acta-project";
+        service.ensure_vigil(project).await;
+
+        // Store an acta.
+        service
+            .update_acta(project, "Persisted briefing")
+            .await
+            .unwrap();
+
+        // Clear the in-memory cache.
+        {
+            let mut vigils = service.vigils.lock().await;
+            if let Some(vigil) = vigils.get_mut(project) {
+                vigil.acta = None;
+            }
+        }
+
+        // Should still be retrievable from KV store.
+        let acta = service.get_acta(project).await;
+        assert_eq!(acta.as_deref(), Some("Persisted briefing"));
     }
 }
