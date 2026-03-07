@@ -71,6 +71,10 @@ impl MemoryStore {
         let importance = input.importance.unwrap_or_else(|| default_importance(&input.memory_type));
         let memory_type_str = memory_type_to_str(&input.memory_type);
 
+        // Generate embedding first — most likely failure point, fail fast
+        // before writing to either store.
+        let embedding = self.lance.embed(&input.content).await?;
+
         // Write to SQLite.
         sqlx::query(
             "INSERT INTO memories (id, project_path, memory_type, content, source_session_id, \
@@ -89,8 +93,7 @@ impl MemoryStore {
         .await
         .map_err(DbError::from)?;
 
-        // Generate embedding and write to LanceDB.
-        let embedding = self.lance.embed(&input.content).await?;
+        // Write vector to LanceDB (idempotent via upsert).
         self.lance
             .upsert_memory(&id, &input.content, &input.project_path, &embedding)
             .await?;
@@ -159,6 +162,21 @@ impl MemoryStore {
     ///
     /// Returns an error if the deletion fails.
     pub(crate) async fn delete(&self, id: &str) -> Result<()> {
+        // Check existence first.
+        let result = sqlx::query("SELECT id FROM memories WHERE id = ?")
+            .bind(id)
+            .fetch_optional(self.db.pool())
+            .await
+            .map_err(DbError::from)?;
+
+        if result.is_none() {
+            return Err(MemoryError::NotFound(id.to_owned()).into());
+        }
+
+        // Delete from LanceDB first — a stale SQLite row is benign and
+        // retryable, but an orphaned vector cannot be cleaned up.
+        self.lance.delete(id).await?;
+
         // Delete edges referencing this memory.
         sqlx::query("DELETE FROM memory_edges WHERE source_id = ? OR target_id = ?")
             .bind(id)
@@ -168,18 +186,11 @@ impl MemoryStore {
             .map_err(DbError::from)?;
 
         // Delete from SQLite.
-        let result = sqlx::query("DELETE FROM memories WHERE id = ?")
+        sqlx::query("DELETE FROM memories WHERE id = ?")
             .bind(id)
             .execute(self.db.pool())
             .await
             .map_err(DbError::from)?;
-
-        if result.rows_affected() == 0 {
-            return Err(MemoryError::NotFound(id.to_owned()).into());
-        }
-
-        // Delete from LanceDB.
-        self.lance.delete(id).await?;
 
         Ok(())
     }
