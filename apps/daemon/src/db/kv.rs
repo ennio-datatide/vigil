@@ -84,7 +84,7 @@ impl KvStore {
                     t.remove(key).map_err(|e| KvError::Write(e.into()))?;
                 }
                 Err(redb::TableError::TableDoesNotExist(_)) => {
-                    // Nothing to delete.
+                    return Ok(());
                 }
                 Err(e) => return Err(KvError::Write(e.into()).into()),
             }
