@@ -58,7 +58,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Utilities
 arc-swap = "1"
 moka = { version = "0.12", features = ["future"] }
-schemars = "1"
+schemars = "1.2"
 rustc-hash = "2"
 fs-err = "3"
 dirs = "6.0"
@@ -71,7 +71,7 @@ tempfile = "3"
 axum-test = "16"
 
 [lints.clippy]
-pedantic = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -2 }
 print_stdout = "warn"
 print_stderr = "warn"
 dbg_macro = "warn"

@@ -31,7 +31,7 @@ impl AppDeps {
     pub async fn new(config: Config) -> Result<Self> {
         config.ensure_dirs()?;
 
-        let db = SqliteDb::connect(&config.database_path).await?;
+        let db = SqliteDb::connect(&config.db_path).await?;
         let event_bus = EventBus::new(1024);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 

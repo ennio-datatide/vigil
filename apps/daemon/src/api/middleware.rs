@@ -31,7 +31,7 @@ pub async fn auth(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let Some(expected) = &deps.config.auth_token else {
+    let Some(expected) = &deps.config.api_token else {
         // No token configured — skip auth.
         return Ok(next.run(request).await);
     };
