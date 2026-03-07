@@ -95,33 +95,15 @@ mod tests {
 
     use crate::db::sqlite::SqliteDb;
     use crate::deps::AppDeps;
-    use crate::events::EventBus;
 
     use super::*;
 
     /// Build a minimal test app with only the `/events` route.
     async fn test_app() -> (Router, Arc<SqliteDb>, TempDir) {
         let dir = TempDir::new().expect("failed to create temp dir");
-        let db_path = dir.path().join("test.db");
-        let db = Arc::new(
-            SqliteDb::connect(&db_path)
-                .await
-                .expect("failed to connect to test db"),
-        );
-        let event_bus = Arc::new(EventBus::new(128));
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-
-        let deps = AppDeps {
-            config: Arc::new(crate::config::Config::for_testing(dir.path())),
-            db: db.clone(),
-            event_bus,
-            pty_manager: Arc::new(crate::process::pty_manager::PtyManager::new()),
-            output_manager: Arc::new(crate::process::output_manager::OutputManager::new(
-                dir.path().join("logs"),
-            )),
-            shutdown_tx: Arc::new(shutdown_tx),
-            shutdown_rx,
-        };
+        let config = crate::config::Config::for_testing(dir.path());
+        let deps = AppDeps::new(config).await.expect("test deps");
+        let db = Arc::clone(&deps.db);
 
         let app = Router::new()
             .route("/events", post(ingest_event))

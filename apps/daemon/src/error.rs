@@ -113,7 +113,11 @@ impl IntoResponse for Error {
             Self::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
-            Self::Config(_) | Self::Db(_) | Self::Memory(_) | Self::Kv(_) | Self::Other(_) => {
+            Self::Memory(inner) => match inner.as_ref() {
+                MemoryError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            },
+            Self::Config(_) | Self::Db(_) | Self::Kv(_) | Self::Other(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
             }
         };
