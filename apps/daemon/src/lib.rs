@@ -37,6 +37,32 @@ pub async fn run(port: u16) -> Result<()> {
 
     let config = Config::resolve(port)?;
     let deps = AppDeps::new(config).await?;
+
+    // Run recovery -- mark orphaned sessions from a previous crash.
+    let recovery = services::recovery::RecoveryService::new(&deps);
+    if let Err(e) = recovery.run().await {
+        tracing::error!(error = %e, "recovery failed");
+    }
+
+    // Start background services.
+    let session_mgr = services::session_manager::SessionManager::new(&deps);
+    let session_mgr_handle = session_mgr.start();
+
+    let notifier = services::notifier::TelegramNotifier::new(&deps);
+    let notifier_handle = notifier.start();
+
+    let cleanup = services::cleanup::CleanupService::new(&deps);
+    let cleanup_handle = cleanup.start();
+
+    // Handle ctrl+c by triggering the shutdown channel.
+    let shutdown_tx = deps.shutdown_tx.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("ctrl+c received");
+        let _ = shutdown_tx.send(true);
+    });
+
+    // Build router and start HTTP server.
     let router = api::router(deps.clone());
 
     let address = SocketAddr::from(([0, 0, 0, 0], port));
@@ -56,6 +82,12 @@ pub async fn run(port: u16) -> Result<()> {
         .await
         .map_err(|error| anyhow::anyhow!("server error: {error}"))?;
 
+    // Cleanup background tasks.
+    session_mgr_handle.abort();
+    notifier_handle.abort();
+    cleanup_handle.abort();
+
+    tracing::info!("praefectus daemon stopped");
     Ok(())
 }
 
