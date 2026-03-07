@@ -10,10 +10,11 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde_json::json;
 
-use crate::db::models::SessionStatus;
+use crate::db::models::{ExitReason, SessionStatus};
 use crate::deps::AppDeps;
 use crate::error::{Error, Result};
 use crate::events::AppEvent;
+use crate::process::agent_spawner::AgentSpawner;
 use crate::services::session_store::{is_terminal_status, CreateSessionInput, SessionStore};
 
 /// `GET /api/sessions` — list all sessions, most recent first.
@@ -36,7 +37,7 @@ pub(crate) async fn get_session(
     Ok(Json(session))
 }
 
-/// `POST /api/sessions` — create a new session (queued, not spawned).
+/// `POST /api/sessions` — create a new session and spawn the agent.
 pub(crate) async fn create_session(
     State(deps): State<AppDeps>,
     Json(input): Json<CreateSessionInput>,
@@ -49,6 +50,29 @@ pub(crate) async fn create_session(
         session: session.clone(),
     });
 
+    // Spawn agent in background (don't block the response).
+    let deps_clone = deps.clone();
+    let session_clone = session.clone();
+    tokio::spawn(async move {
+        let spawner = AgentSpawner::new(&deps_clone);
+        if let Err(e) = spawner.spawn_interactive(&session_clone, false).await {
+            tracing::error!(session_id = session_clone.id, error = %e, "agent spawn failed");
+            let store = SessionStore::new(deps_clone.db.clone());
+            let _ = store
+                .update_status(
+                    &session_clone.id,
+                    SessionStatus::Failed,
+                    Some(ExitReason::Error),
+                    Some(unix_ms()),
+                )
+                .await;
+            let _ = deps_clone.event_bus.emit(AppEvent::SessionSpawnFailed {
+                session_id: session_clone.id.clone(),
+                reason: e.to_string(),
+            });
+        }
+    });
+
     Ok((StatusCode::CREATED, Json(session)))
 }
 
@@ -57,6 +81,9 @@ pub(crate) async fn cancel_session(
     State(deps): State<AppDeps>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
+    // Kill the running agent before updating status.
+    deps.pty_manager.kill(&id).await;
+
     let store = SessionStore::new(deps.db.clone());
     let now_ms = unix_ms();
 
@@ -81,6 +108,9 @@ pub(crate) async fn remove_session(
     State(deps): State<AppDeps>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
+    // Kill the running agent (if any) before deleting.
+    deps.pty_manager.kill(&id).await;
+
     let store = SessionStore::new(deps.db.clone());
     store.delete(&id).await?;
 
@@ -121,6 +151,29 @@ pub(crate) async fn restart_session(
 
     let _ = deps.event_bus.emit(AppEvent::SessionUpdate {
         session: session.clone(),
+    });
+
+    // Spawn agent with --continue in background.
+    let deps_clone = deps.clone();
+    let session_clone = session.clone();
+    tokio::spawn(async move {
+        let spawner = AgentSpawner::new(&deps_clone);
+        if let Err(e) = spawner.spawn_interactive(&session_clone, true).await {
+            tracing::error!(session_id = session_clone.id, error = %e, "agent restart failed");
+            let store = SessionStore::new(deps_clone.db.clone());
+            let _ = store
+                .update_status(
+                    &session_clone.id,
+                    SessionStatus::Failed,
+                    Some(ExitReason::Error),
+                    Some(unix_ms()),
+                )
+                .await;
+            let _ = deps_clone.event_bus.emit(AppEvent::SessionSpawnFailed {
+                session_id: session_clone.id.clone(),
+                reason: e.to_string(),
+            });
+        }
     });
 
     Ok(Json(session))
@@ -167,6 +220,29 @@ pub(crate) async fn resume_session(
 
     let _ = deps.event_bus.emit(AppEvent::SessionUpdate {
         session: session.clone(),
+    });
+
+    // Spawn agent with --continue in background.
+    let deps_clone = deps.clone();
+    let session_clone = session.clone();
+    tokio::spawn(async move {
+        let spawner = AgentSpawner::new(&deps_clone);
+        if let Err(e) = spawner.spawn_interactive(&session_clone, true).await {
+            tracing::error!(session_id = session_clone.id, error = %e, "agent resume failed");
+            let store = SessionStore::new(deps_clone.db.clone());
+            let _ = store
+                .update_status(
+                    &session_clone.id,
+                    SessionStatus::Failed,
+                    Some(ExitReason::Error),
+                    Some(unix_ms()),
+                )
+                .await;
+            let _ = deps_clone.event_bus.emit(AppEvent::SessionSpawnFailed {
+                session_id: session_clone.id.clone(),
+                reason: e.to_string(),
+            });
+        }
     });
 
     Ok((StatusCode::CREATED, Json(session)))
