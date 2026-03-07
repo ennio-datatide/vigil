@@ -32,6 +32,10 @@ const MEMORIES_TABLE: &str = "memories";
 pub(crate) struct SearchResult {
     /// Memory id.
     pub id: String,
+    /// The memory text.
+    pub content: String,
+    /// Project this memory belongs to.
+    pub project_path: String,
     /// Distance score (lower is more similar for L2).
     pub distance: f32,
 }
@@ -84,19 +88,26 @@ impl LanceDb {
 
     /// Generate an embedding vector for the given text.
     ///
+    /// The embedding model runs on a blocking thread to avoid starving
+    /// the tokio runtime during CPU-intensive inference.
+    ///
     /// # Errors
     ///
     /// Returns [`MemoryError::Embedding`] on model failure.
-    pub fn embed(&self, text: &str) -> Result<Vec<f32>, MemoryError> {
-        let results = self
-            .embedder
-            .embed(vec![text], None)
-            .map_err(|e| MemoryError::Embedding(e.to_string()))?;
-
-        results
-            .into_iter()
-            .next()
-            .ok_or_else(|| MemoryError::Embedding("empty embedding result".into()))
+    pub async fn embed(&self, text: &str) -> Result<Vec<f32>, MemoryError> {
+        let embedder = Arc::clone(&self.embedder);
+        let text = text.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let results = embedder
+                .embed(vec![&text], None)
+                .map_err(|e| MemoryError::Embedding(e.to_string()))?;
+            results
+                .into_iter()
+                .next()
+                .ok_or_else(|| MemoryError::Embedding("empty embedding result".into()))
+        })
+        .await
+        .map_err(|e| MemoryError::Embedding(e.to_string()))?
     }
 
     /// Insert or update a memory vector.
@@ -152,7 +163,7 @@ impl LanceDb {
             .vector_search(embedding.to_vec())
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?
             .limit(limit)
-            .select(lancedb::query::Select::columns(&["id"]))
+            .select(lancedb::query::Select::columns(&["id", "content", "project_path"]))
             .execute()
             .await
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
@@ -163,12 +174,9 @@ impl LanceDb {
             .await
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?
         {
-            let ids = batch
-                .column_by_name("id")
-                .ok_or_else(|| MemoryError::VectorStore("missing id column".into()))?
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or_else(|| MemoryError::VectorStore("id column is not a StringArray".into()))?;
+            let ids = Self::string_col(&batch, "id")?;
+            let contents = Self::string_col(&batch, "content")?;
+            let project_paths = Self::string_col(&batch, "project_path")?;
 
             let distances = batch
                 .column_by_name("_distance")
@@ -182,6 +190,8 @@ impl LanceDb {
             for i in 0..batch.num_rows() {
                 results.push(SearchResult {
                     id: ids.value(i).to_owned(),
+                    content: contents.value(i).to_owned(),
+                    project_path: project_paths.value(i).to_owned(),
                     distance: distances.value(i),
                 });
             }
@@ -197,8 +207,10 @@ impl LanceDb {
     /// Returns [`MemoryError::VectorStore`] on deletion failure.
     pub async fn delete(&self, id: &str) -> Result<(), MemoryError> {
         let table = self.open_table().await?;
+        // Escape single quotes to prevent filter-expression injection.
+        let safe_id = id.replace('\'', "''");
         table
-            .delete(&format!("id = '{id}'"))
+            .delete(&format!("id = '{safe_id}'"))
             .await
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
         Ok(())
@@ -207,6 +219,19 @@ impl LanceDb {
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+
+    /// Extract a `StringArray` column by name from a `RecordBatch`.
+    fn string_col<'a>(
+        batch: &'a RecordBatch,
+        name: &str,
+    ) -> Result<&'a StringArray, MemoryError> {
+        batch
+            .column_by_name(name)
+            .ok_or_else(|| MemoryError::VectorStore(format!("missing {name} column")))?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or_else(|| MemoryError::VectorStore(format!("{name} column is not Utf8")))
+    }
 
     /// Ensure the `memories` table exists, creating it if needed.
     async fn ensure_table(&self) -> Result<(), MemoryError> {
@@ -302,7 +327,7 @@ mod tests {
     #[tokio::test]
     async fn embed_produces_384_dim_vector() {
         let (_tmp, db) = setup().await;
-        let vec = db.embed("hello world").unwrap();
+        let vec = db.embed("hello world").await.unwrap();
         assert_eq!(vec.len(), 384);
     }
 
@@ -311,7 +336,7 @@ mod tests {
         let (_tmp, db) = setup().await;
 
         let text = "Rust is a systems programming language";
-        let embedding = db.embed(text).unwrap();
+        let embedding = db.embed(text).await.unwrap();
 
         db.upsert_memory("mem-1", text, "/project", &embedding)
             .await
@@ -326,12 +351,12 @@ mod tests {
     async fn upsert_overwrites_existing() {
         let (_tmp, db) = setup().await;
 
-        let emb1 = db.embed("first version").unwrap();
+        let emb1 = db.embed("first version").await.unwrap();
         db.upsert_memory("mem-1", "first version", "/p", &emb1)
             .await
             .unwrap();
 
-        let emb2 = db.embed("second version").unwrap();
+        let emb2 = db.embed("second version").await.unwrap();
         db.upsert_memory("mem-1", "second version", "/p", &emb2)
             .await
             .unwrap();
@@ -345,7 +370,7 @@ mod tests {
     async fn delete_removes_memory() {
         let (_tmp, db) = setup().await;
 
-        let embedding = db.embed("to be deleted").unwrap();
+        let embedding = db.embed("to be deleted").await.unwrap();
         db.upsert_memory("del-1", "to be deleted", "/p", &embedding)
             .await
             .unwrap();
