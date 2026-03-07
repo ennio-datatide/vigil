@@ -29,6 +29,8 @@ pub struct Config {
     pub worktree_base: PathBuf,
     /// Directory for the `LanceDB` vector store.
     pub lance_dir: PathBuf,
+    /// Path to the redb key-value store file.
+    pub kv_path: PathBuf,
     /// Optional bearer token for API authentication.
     pub api_token: Option<String>,
     /// Optional dashboard URL override.
@@ -54,6 +56,7 @@ impl Config {
         let pid_file = praefectus_home.join("daemon.pid");
         let worktree_base = praefectus_home.join("worktrees");
         let lance_dir = praefectus_home.join("lance");
+        let kv_path = praefectus_home.join("kv.redb");
 
         let api_token = std::env::var("PRAEFECTUS_AUTH_TOKEN").ok();
         let dashboard_url = std::env::var("PRAEFECTUS_DASHBOARD_URL").ok();
@@ -68,6 +71,7 @@ impl Config {
             pid_file,
             worktree_base,
             lance_dir,
+            kv_path,
             api_token,
             dashboard_url,
         })
@@ -90,6 +94,7 @@ impl Config {
             pid_file: base.join("daemon.pid"),
             worktree_base: base.join("worktrees"),
             lance_dir: base.join("lance"),
+            kv_path: base.join("kv.redb"),
             api_token: None,
             dashboard_url: None,
         }
