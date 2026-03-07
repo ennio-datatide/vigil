@@ -9,6 +9,7 @@ use crate::error::{ConfigError, Result};
 
 /// Resolved daemon configuration.
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // Fields are used by later tasks.
 pub struct Config {
     /// Port the HTTP server listens on.
     pub server_port: u16,

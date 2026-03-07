@@ -5,7 +5,9 @@
 
 pub mod health;
 pub mod middleware;
+pub(crate) mod sessions;
 
+use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
 
@@ -14,13 +16,20 @@ use crate::deps::AppDeps;
 /// Build the full application router.
 pub fn router(deps: AppDeps) -> Router {
     let api_routes = Router::new()
+        .route("/sessions", get(sessions::list_sessions))
+        .route("/sessions", post(sessions::create_session))
+        .route("/sessions/{id}", get(sessions::get_session))
+        .route("/sessions/{id}", delete(sessions::cancel_session))
+        .route("/sessions/{id}/remove", delete(sessions::remove_session))
+        .route("/sessions/{id}/restart", post(sessions::restart_session))
+        .route("/sessions/{id}/resume", post(sessions::resume_session))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
         ));
 
     Router::new()
-        .route("/health", axum::routing::get(health::health))
+        .route("/health", get(health::health))
         .nest("/api", api_routes)
         .layer(CorsLayer::permissive())
         .with_state(deps)

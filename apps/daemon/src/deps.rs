@@ -14,6 +14,7 @@ use crate::events::EventBus;
 
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // Fields are used by later tasks.
 pub struct AppDeps {
     pub config: Arc<Config>,
     pub db: Arc<SqliteDb>,

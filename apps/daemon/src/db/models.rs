@@ -3,6 +3,9 @@
 //! All structs use `camelCase` serialization to match the frontend API contract.
 //! Timestamps are Unix milliseconds (`i64`) to match the TypeScript frontend.
 
+#![allow(dead_code)] // Models are defined ahead of their consumers.
+#![allow(clippy::struct_field_names)] // Field names match the frontend JSON contract.
+
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------

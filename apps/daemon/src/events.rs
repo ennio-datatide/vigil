@@ -10,6 +10,7 @@ use crate::db::models::{Session, SessionStatus};
 /// Domain events emitted throughout the daemon.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(dead_code)] // Variants are used by later tasks.
 pub enum AppEvent {
     /// A session's data was updated.
     SessionUpdate { session: Session },
@@ -65,10 +66,12 @@ pub enum AppEvent {
 
 /// Broadcast-based event bus for internal pub/sub.
 #[derive(Debug)]
+#[allow(dead_code)] // Methods are used by later tasks.
 pub struct EventBus {
     sender: broadcast::Sender<AppEvent>,
 }
 
+#[allow(dead_code)] // Methods are used by later tasks.
 impl EventBus {
     /// Create a new event bus with the given channel capacity.
     #[must_use]
