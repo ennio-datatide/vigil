@@ -14,10 +14,13 @@ use arrow_array::{
 use arrow_schema::{DataType, Field, Schema};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::TryStreamExt;
+use lance_index::scalar::FullTextSearchQuery;
 use lancedb::connection::{ConnectBuilder, Connection};
 use lancedb::database::CreateTableMode;
+use lancedb::index::scalar::FtsIndexBuilder;
+use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::error::MemoryError;
 
@@ -193,6 +196,96 @@ impl LanceDb {
                     content: contents.value(i).to_owned(),
                     project_path: project_paths.value(i).to_owned(),
                     distance: distances.value(i),
+                });
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Create the full-text search index on the `content` column.
+    ///
+    /// This is idempotent — `LanceDB` replaces the existing index by default.
+    /// Requires at least one row in the table to build the index, so this
+    /// is a no-op on an empty table.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MemoryError::VectorStore`] on index creation failure.
+    pub async fn create_fts_index(&self) -> Result<(), MemoryError> {
+        let table = self.open_table().await?;
+        let count = table
+            .count_rows(None)
+            .await
+            .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
+
+        if count == 0 {
+            debug!("skipping FTS index creation on empty table");
+            return Ok(());
+        }
+
+        table
+            .create_index(&["content"], Index::FTS(FtsIndexBuilder::default()))
+            .execute()
+            .await
+            .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
+
+        debug!("FTS index created on memories.content");
+        Ok(())
+    }
+
+    /// Run a full-text search against the `content` column.
+    ///
+    /// Requires a FTS index to have been created via [`Self::create_fts_index`].
+    /// Returns up to `limit` results ordered by BM25 relevance score.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MemoryError::VectorStore`] on query failure.
+    pub async fn full_text_search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, MemoryError> {
+        let table = self.open_table().await?;
+
+        let fts_query = FullTextSearchQuery::new(query.to_owned());
+
+        let mut stream = table
+            .query()
+            .full_text_search(fts_query)
+            .select(lancedb::query::Select::columns(&[
+                "id",
+                "content",
+                "project_path",
+            ]))
+            .limit(limit)
+            .execute()
+            .await
+            .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
+
+        let mut results = Vec::new();
+        while let Some(batch) = stream
+            .try_next()
+            .await
+            .map_err(|e| MemoryError::VectorStore(e.to_string()))?
+        {
+            let ids = Self::string_col(&batch, "id")?;
+            let contents = Self::string_col(&batch, "content")?;
+            let project_paths = Self::string_col(&batch, "project_path")?;
+
+            // FTS returns a _score column (BM25 score). We store it in the
+            // `distance` field — higher is better (unlike vector distance).
+            let scores = batch
+                .column_by_name("_score")
+                .and_then(|c| c.as_any().downcast_ref::<Float32Array>().cloned());
+
+            for i in 0..batch.num_rows() {
+                results.push(SearchResult {
+                    id: ids.value(i).to_owned(),
+                    content: contents.value(i).to_owned(),
+                    project_path: project_paths.value(i).to_owned(),
+                    distance: scores.as_ref().map_or(0.0, |s| s.value(i)),
                 });
             }
         }

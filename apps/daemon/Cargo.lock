@@ -5380,6 +5380,7 @@ dependencies = [
  "futures",
  "http-body-util",
  "insta",
+ "lance-index",
  "lancedb",
  "minijinja",
  "moka",
