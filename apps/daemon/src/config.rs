@@ -27,6 +27,8 @@ pub struct Config {
     pub pid_file: PathBuf,
     /// Base directory for git worktrees.
     pub worktree_base: PathBuf,
+    /// Directory for the `LanceDB` vector store.
+    pub lance_dir: PathBuf,
     /// Optional bearer token for API authentication.
     pub api_token: Option<String>,
     /// Optional dashboard URL override.
@@ -51,6 +53,7 @@ impl Config {
         let skills_dir = praefectus_home.join("skills");
         let pid_file = praefectus_home.join("daemon.pid");
         let worktree_base = praefectus_home.join("worktrees");
+        let lance_dir = praefectus_home.join("lance");
 
         let api_token = std::env::var("PRAEFECTUS_AUTH_TOKEN").ok();
         let dashboard_url = std::env::var("PRAEFECTUS_DASHBOARD_URL").ok();
@@ -64,6 +67,7 @@ impl Config {
             skills_dir,
             pid_file,
             worktree_base,
+            lance_dir,
             api_token,
             dashboard_url,
         })
@@ -85,6 +89,7 @@ impl Config {
             skills_dir: base.join("skills"),
             pid_file: base.join("daemon.pid"),
             worktree_base: base.join("worktrees"),
+            lance_dir: base.join("lance"),
             api_token: None,
             dashboard_url: None,
         }
@@ -96,7 +101,7 @@ impl Config {
     ///
     /// Returns an error if directory creation fails.
     pub fn ensure_dirs(&self) -> Result<()> {
-        for dir in [&self.praefectus_home, &self.logs_dir, &self.skills_dir, &self.worktree_base] {
+        for dir in [&self.praefectus_home, &self.logs_dir, &self.skills_dir, &self.worktree_base, &self.lance_dir] {
             std::fs::create_dir_all(dir).map_err(ConfigError::CreateDir)?;
         }
         Ok(())
