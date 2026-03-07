@@ -219,6 +219,7 @@ pub struct Memory {
     pub project_path: String,
     pub content: String,
     pub memory_type: MemoryType,
+    pub source_session_id: Option<String>,
     pub importance: f64,
     pub access_count: i64,
     pub created_at: i64,
@@ -229,9 +230,10 @@ pub struct Memory {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryEdge {
-    pub id: i64,
+    pub id: String,
     pub source_id: String,
     pub target_id: String,
     pub edge_type: MemoryEdgeType,
+    pub weight: f64,
     pub created_at: i64,
 }
