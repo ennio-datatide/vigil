@@ -26,7 +26,8 @@ impl SqliteDb {
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal);
+            .synchronous(SqliteSynchronous::Normal)
+            .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)

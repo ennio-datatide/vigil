@@ -3,15 +3,18 @@
 //! Provides the core server logic: configuration, database, event bus,
 //! HTTP API, and service layer.
 
-pub mod api;
-pub mod config;
-pub mod db;
-pub mod deps;
-pub mod error;
-pub mod events;
-pub mod hooks;
-pub mod process;
-pub mod services;
+pub(crate) mod api;
+pub(crate) mod config;
+pub(crate) mod db;
+pub(crate) mod deps;
+pub(crate) mod events;
+pub(crate) mod hooks;
+pub(crate) mod process;
+pub(crate) mod services;
+
+mod error;
+
+pub use error::{Error, Result};
 
 use std::net::SocketAddr;
 
@@ -27,7 +30,7 @@ use crate::deps::AppDeps;
 ///
 /// Returns an error if configuration resolution, database connection,
 /// or the TCP listener fails.
-pub async fn run(port: u16) -> error::Result<()> {
+pub async fn run(port: u16) -> Result<()> {
     init_tracing();
 
     tracing::info!(port, "starting praefectus daemon");

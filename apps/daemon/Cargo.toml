@@ -55,6 +55,9 @@ minijinja = "2.8"
 uuid = { version = "1.15", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+# Crypto
+subtle = "2"
+
 # Utilities
 arc-swap = "1"
 moka = { version = "0.12", features = ["future"] }

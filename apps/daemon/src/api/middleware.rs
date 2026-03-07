@@ -39,7 +39,7 @@ pub async fn auth(
     let provided = extract_token(&request, &query);
 
     match provided {
-        Some(token) if timing_safe_eq(token.as_bytes(), expected.as_bytes()) => {
+        Some(token) if constant_time_eq(token.as_bytes(), expected.as_bytes()) => {
             Ok(next.run(request).await)
         }
         _ => Err(StatusCode::UNAUTHORIZED),
@@ -64,14 +64,14 @@ fn extract_token<'a>(
 }
 
 /// Constant-time byte comparison to prevent timing attacks.
-fn timing_safe_eq(a: &[u8], b: &[u8]) -> bool {
+///
+/// Uses the `subtle` crate for a proper constant-time equality check.
+/// The early return on length mismatch is acceptable for fixed-length API tokens.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    use subtle::ConstantTimeEq;
+
     if a.len() != b.len() {
         return false;
     }
-
-    let mut result = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
+    a.ct_eq(b).into()
 }
