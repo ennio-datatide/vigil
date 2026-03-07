@@ -20,6 +20,9 @@ use crate::events::{AppEvent, EventBus};
 /// Default maximum context window size for Claude (tokens).
 const DEFAULT_MAX_TOKENS: usize = 200_000;
 
+/// Maximum number of overflow recovery retries per session.
+const MAX_OVERFLOW_RETRIES: u32 = 2;
+
 /// Rough heuristic: 1 token ≈ 4 characters.
 const CHARS_PER_TOKEN: usize = 4;
 
@@ -183,6 +186,42 @@ impl LictorService {
         }
     }
 
+    /// Handle a context overflow for a session.
+    ///
+    /// Returns `true` if the overflow was handled (emergency compaction + retry),
+    /// `false` if max retries have been exceeded.
+    pub(crate) fn handle_overflow(&self, session_id: &str) -> bool {
+        let mut map = self.context_sizes.lock().expect("lock poisoned");
+        let state = map
+            .entry(session_id.to_owned())
+            .or_insert_with(ContextState::new);
+
+        if state.retry_count >= MAX_OVERFLOW_RETRIES {
+            tracing::error!(
+                %session_id,
+                retry_count = state.retry_count,
+                "lictor: max overflow retries exceeded, giving up"
+            );
+            return false;
+        }
+
+        state.retry_count += 1;
+        let old_count = state.token_count;
+        let new_count = state.max_tokens / 2;
+        state.token_count = new_count;
+        let retry = state.retry_count;
+
+        tracing::warn!(
+            %session_id,
+            old_token_count = old_count,
+            new_token_count = new_count,
+            retry_count = retry,
+            "lictor: overflow recovery — emergency compaction, dropped content logged for post-session review"
+        );
+
+        true
+    }
+
     /// Execute a compaction action.
     ///
     /// - **Background / Aggressive**: emits a `CompactionRequested` event so that
@@ -280,10 +319,10 @@ impl LictorMonitor {
         match event {
             AppEvent::HookEvent {
                 session_id,
-                event_type: _,
+                event_type,
                 payload,
             } => {
-                self.process_hook_event(session_id, payload.as_ref());
+                self.process_hook_event(session_id, event_type, payload.as_ref());
             }
             AppEvent::StatusChanged {
                 session_id,
@@ -300,9 +339,95 @@ impl LictorMonitor {
         }
     }
 
+    /// Keywords that indicate a context overflow error in a hook event payload.
+    const OVERFLOW_KEYWORDS: &[&str] = &[
+        "context_overflow",
+        "context_window",
+        "token_limit",
+        "maximum context length",
+    ];
+
+    /// Detect if a hook event indicates a context overflow error.
+    fn detect_overflow(
+        event_type: &str,
+        payload: Option<&serde_json::Value>,
+    ) -> bool {
+        // Only consider error/stop events.
+        let is_error_event = event_type.eq_ignore_ascii_case("error")
+            || event_type.eq_ignore_ascii_case("stop");
+        if !is_error_event {
+            return false;
+        }
+
+        // Search the payload for overflow-related keywords.
+        let payload_str = match payload {
+            Some(v) => v.to_string().to_lowercase(),
+            None => return false,
+        };
+
+        Self::OVERFLOW_KEYWORDS
+            .iter()
+            .any(|kw| payload_str.contains(kw))
+    }
+
+    /// Handle a context overflow for a session.
+    ///
+    /// Returns `true` if the overflow was handled (emergency compaction + retry),
+    /// `false` if max retries have been exceeded.
+    fn handle_overflow(&self, session_id: &str) -> bool {
+        let mut map = self.context_sizes.lock().expect("lock poisoned");
+        let state = map
+            .entry(session_id.to_owned())
+            .or_insert_with(ContextState::new);
+
+        if state.retry_count >= MAX_OVERFLOW_RETRIES {
+            tracing::error!(
+                %session_id,
+                retry_count = state.retry_count,
+                "lictor: max overflow retries exceeded, giving up"
+            );
+            return false;
+        }
+
+        state.retry_count += 1;
+        let old_count = state.token_count;
+        let new_count = state.max_tokens / 2;
+        state.token_count = new_count;
+        let retry = state.retry_count;
+
+        tracing::warn!(
+            %session_id,
+            old_token_count = old_count,
+            new_token_count = new_count,
+            retry_count = retry,
+            "lictor: overflow recovery — emergency compaction, dropped content logged for post-session review"
+        );
+
+        true
+    }
+
     /// Extract token count from a hook event payload, update tracking,
-    /// and trigger compaction if thresholds are crossed.
-    fn process_hook_event(&self, session_id: &str, payload: Option<&serde_json::Value>) {
+    /// and trigger compaction if thresholds are crossed. Also detects overflow
+    /// errors and performs emergency compaction with retry.
+    fn process_hook_event(
+        &self,
+        session_id: &str,
+        event_type: &str,
+        payload: Option<&serde_json::Value>,
+    ) {
+        // Check for overflow errors first.
+        if Self::detect_overflow(event_type, payload) {
+            let retrying = self.handle_overflow(session_id);
+            if retrying {
+                let _ = self.event_bus.emit(AppEvent::CompactionRequested {
+                    session_id: session_id.to_owned(),
+                    level: CompactionLevel::Emergency.as_str().to_owned(),
+                    summarize_fraction: 0.0,
+                });
+            }
+            return;
+        }
+
         let token_count = payload.and_then(extract_token_count);
 
         if let Some(count) = token_count {
@@ -647,5 +772,156 @@ mod tests {
         assert_eq!(CompactionLevel::Aggressive.as_str(), "aggressive");
         assert_eq!(CompactionLevel::Emergency.as_str(), "emergency");
         assert_eq!(format!("{}", CompactionLevel::Background), "background");
+    }
+
+    // -- Overflow recovery tests (Task 4.3) --
+
+    #[test]
+    fn overflow_detected_from_error_event() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let mut rx = event_bus.subscribe();
+        let monitor = LictorMonitor {
+            event_bus: Arc::clone(&event_bus),
+            context_sizes: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        // Seed session with high token count.
+        {
+            let mut map = monitor.context_sizes.lock().unwrap();
+            map.insert(
+                "s-1".to_owned(),
+                ContextState {
+                    token_count: 190_000,
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    retry_count: 0,
+                },
+            );
+        }
+
+        // An error event with "context_overflow" should trigger overflow handling.
+        let payload = serde_json::json!({ "error": "context_overflow detected" });
+        monitor.process_hook_event("s-1", "Error", Some(&payload));
+
+        // Token count should be reduced to 50%.
+        let map = monitor.context_sizes.lock().unwrap();
+        let state = map.get("s-1").unwrap();
+        assert_eq!(state.token_count, DEFAULT_MAX_TOKENS / 2);
+        assert_eq!(state.retry_count, 1);
+
+        // A CompactionRequested event should have been emitted.
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(event, AppEvent::CompactionRequested { .. }));
+    }
+
+    #[test]
+    fn overflow_retries_capped_at_max() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let monitor = LictorMonitor {
+            event_bus: Arc::clone(&event_bus),
+            context_sizes: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        // Seed session with retry_count at MAX_OVERFLOW_RETRIES.
+        {
+            let mut map = monitor.context_sizes.lock().unwrap();
+            map.insert(
+                "s-1".to_owned(),
+                ContextState {
+                    token_count: 190_000,
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    retry_count: MAX_OVERFLOW_RETRIES,
+                },
+            );
+        }
+
+        // Should return false — retries exhausted.
+        assert!(!monitor.handle_overflow("s-1"));
+
+        // Token count should be unchanged.
+        let map = monitor.context_sizes.lock().unwrap();
+        let state = map.get("s-1").unwrap();
+        assert_eq!(state.token_count, 190_000);
+        assert_eq!(state.retry_count, MAX_OVERFLOW_RETRIES);
+    }
+
+    #[test]
+    fn overflow_triggers_emergency_compaction() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let monitor = LictorMonitor {
+            event_bus: Arc::clone(&event_bus),
+            context_sizes: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        // Seed session with high token count, no prior retries.
+        {
+            let mut map = monitor.context_sizes.lock().unwrap();
+            map.insert(
+                "s-1".to_owned(),
+                ContextState {
+                    token_count: 195_000,
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    retry_count: 0,
+                },
+            );
+        }
+
+        // First overflow — should succeed.
+        assert!(monitor.handle_overflow("s-1"));
+        {
+            let map = monitor.context_sizes.lock().unwrap();
+            let state = map.get("s-1").unwrap();
+            assert_eq!(state.token_count, DEFAULT_MAX_TOKENS / 2);
+            assert_eq!(state.retry_count, 1);
+        }
+
+        // Simulate tokens growing back up.
+        {
+            let mut map = monitor.context_sizes.lock().unwrap();
+            map.get_mut("s-1").unwrap().token_count = 195_000;
+        }
+
+        // Second overflow — should still succeed (retry_count becomes 2).
+        assert!(monitor.handle_overflow("s-1"));
+        {
+            let map = monitor.context_sizes.lock().unwrap();
+            let state = map.get("s-1").unwrap();
+            assert_eq!(state.token_count, DEFAULT_MAX_TOKENS / 2);
+            assert_eq!(state.retry_count, 2);
+        }
+
+        // Third overflow — should fail (max retries reached).
+        assert!(!monitor.handle_overflow("s-1"));
+    }
+
+    #[test]
+    fn non_overflow_error_ignored() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let monitor = LictorMonitor {
+            event_bus: Arc::clone(&event_bus),
+            context_sizes: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        // Seed session.
+        {
+            let mut map = monitor.context_sizes.lock().unwrap();
+            map.insert(
+                "s-1".to_owned(),
+                ContextState {
+                    token_count: 190_000,
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    retry_count: 0,
+                },
+            );
+        }
+
+        // An error event that is NOT about context overflow should not trigger overflow handling.
+        let payload = serde_json::json!({ "error": "file not found" });
+        monitor.process_hook_event("s-1", "Error", Some(&payload));
+
+        // Token count should be unchanged (no token info to extract either).
+        let map = monitor.context_sizes.lock().unwrap();
+        let state = map.get("s-1").unwrap();
+        assert_eq!(state.token_count, 190_000);
+        assert_eq!(state.retry_count, 0);
     }
 }
