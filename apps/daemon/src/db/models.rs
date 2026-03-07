@@ -1,10 +1,9 @@
 //! Domain model types mirroring the `SQLite` schema.
 //!
 //! All structs use `camelCase` serialization to match the frontend API contract.
+//! Timestamps are Unix milliseconds (`i64`) to match the TypeScript frontend.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -16,10 +15,12 @@ use uuid::Uuid;
 pub enum SessionStatus {
     Queued,
     Running,
-    Paused,
+    NeedsInput,
+    AuthRequired,
     Completed,
     Failed,
     Cancelled,
+    Interrupted,
 }
 
 /// Type of AI agent driving a session.
@@ -28,55 +29,54 @@ pub enum SessionStatus {
 pub enum AgentType {
     Claude,
     Codex,
-    Custom,
 }
 
 /// Role assigned to a session.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionRole {
-    Lead,
-    Worker,
+    Implementer,
     Reviewer,
+    Fixer,
+    Custom,
 }
 
 /// Reason a session exited.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExitReason {
-    Success,
+    Completed,
     Error,
-    Timeout,
-    Cancelled,
-    Signal,
+    UserCancelled,
+    ChainTriggered,
 }
 
 /// How a sub-session was spawned.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpawnType {
-    Chain,
-    Pipeline,
-    Manual,
+    Branch,
+    Worker,
 }
 
 /// Type of notification.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationType {
-    SessionStarted,
-    SessionCompleted,
-    SessionFailed,
-    SessionCancelled,
+    NeedsInput,
+    Error,
+    AuthRequired,
+    ChainComplete,
+    SessionDone,
 }
 
 /// Git repository metadata attached to a session.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitMetadata {
-    pub repo_name: Option<String>,
-    pub branch: Option<String>,
-    pub commit_hash: Option<String>,
+    pub repo_name: String,
+    pub branch: String,
+    pub commit_hash: String,
     pub remote_url: Option<String>,
 }
 
@@ -86,19 +86,21 @@ pub struct GitMetadata {
 pub enum MemoryType {
     Fact,
     Decision,
-    Pattern,
     Preference,
-    Context,
+    Pattern,
+    Failure,
+    Todo,
 }
 
 /// Type of edge connecting two memories.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryEdgeType {
-    RelatesTo,
-    DerivedFrom,
-    Supersedes,
+    RelatedTo,
+    Updates,
     Contradicts,
+    CausedBy,
+    PartOf,
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +124,8 @@ pub struct Session {
     pub spawn_type: Option<SpawnType>,
     pub spawn_result: Option<String>,
     pub retry_count: i32,
-    pub started_at: Option<DateTime<Utc>>,
-    pub ended_at: Option<DateTime<Utc>>,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
     pub exit_reason: Option<ExitReason>,
     pub git_metadata: Option<GitMetadata>,
     pub pipeline_id: Option<String>,
@@ -139,7 +141,7 @@ pub struct Event {
     pub event_type: String,
     pub tool_name: Option<String>,
     pub payload: Option<serde_json::Value>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: i64,
 }
 
 /// A registered project directory.
@@ -149,7 +151,7 @@ pub struct Project {
     pub path: String,
     pub name: String,
     pub skills_dir: Option<String>,
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<i64>,
 }
 
 /// A visual position in the pipeline editor.
@@ -189,8 +191,8 @@ pub struct Pipeline {
     pub steps: Vec<PipelineStep>,
     pub edges: Vec<PipelineEdge>,
     pub is_default: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 /// A notification about a session event.
@@ -202,32 +204,31 @@ pub struct Notification {
     #[serde(rename = "type")]
     pub notification_type: NotificationType,
     pub message: String,
-    pub sent_at: Option<DateTime<Utc>>,
-    pub read_at: Option<DateTime<Utc>>,
+    pub sent_at: Option<i64>,
+    pub read_at: Option<i64>,
 }
 
 /// A memory entry in the knowledge graph.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Memory {
-    pub id: Uuid,
-    pub project_path: Option<String>,
-    pub memory_type: MemoryType,
+    pub id: String,
+    pub project_path: String,
     pub content: String,
-    pub source_session_id: Option<String>,
-    pub confidence: f64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub memory_type: MemoryType,
+    pub importance: f64,
+    pub access_count: i64,
+    pub created_at: i64,
+    pub accessed_at: i64,
 }
 
 /// A directed edge between two memory entries.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryEdge {
-    pub id: Uuid,
-    pub source_id: Uuid,
-    pub target_id: Uuid,
+    pub id: i64,
+    pub source_id: String,
+    pub target_id: String,
     pub edge_type: MemoryEdgeType,
-    pub weight: f64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: i64,
 }
