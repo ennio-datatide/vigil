@@ -4,6 +4,7 @@
 //! and route modules.
 
 pub(crate) mod events;
+pub(crate) mod filesystem;
 pub mod health;
 pub mod middleware;
 pub(crate) mod notifications;
@@ -47,6 +48,7 @@ pub fn router(deps: AppDeps) -> Router {
             get(settings::get_telegram).put(settings::put_telegram),
         )
         .route("/settings/telegram/test", post(settings::test_telegram))
+        .route("/fs/dirs", get(filesystem::list_dirs))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
