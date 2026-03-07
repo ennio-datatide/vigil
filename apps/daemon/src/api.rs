@@ -13,6 +13,7 @@ pub(crate) mod projects;
 pub(crate) mod sessions;
 pub(crate) mod settings;
 pub(crate) mod skills;
+pub(crate) mod ws_dashboard;
 
 use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
@@ -57,6 +58,7 @@ pub fn router(deps: AppDeps) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/events", post(events::ingest_event))
+        .route("/ws/dashboard", get(ws_dashboard::ws_dashboard))
         .nest("/api", api_routes)
         .layer(CorsLayer::permissive())
         .with_state(deps)

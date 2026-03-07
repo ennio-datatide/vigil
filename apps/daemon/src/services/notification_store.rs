@@ -93,6 +93,24 @@ impl NotificationStore {
         Ok(row_to_notification(&row))
     }
 
+    /// Fetch a single notification by ID. Returns `None` if not found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub(crate) async fn get_by_id(&self, id: i64) -> Result<Option<Notification>> {
+        let row = sqlx::query(
+            "SELECT id, session_id, type, message, sent_at, read_at \
+             FROM notifications WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(self.db.pool())
+        .await
+        .map_err(DbError::from)?;
+
+        Ok(row.as_ref().map(row_to_notification))
+    }
+
     /// Mark a single notification as read. Returns `None` if not found.
     ///
     /// # Errors
