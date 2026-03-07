@@ -210,6 +210,34 @@ impl SessionStore {
             .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
     }
 
+    /// Set the `pipeline_step_index` on a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session is not found or the update fails.
+    #[allow(dead_code)] // Called by session manager (Task 1.13).
+    pub(crate) async fn set_pipeline_step_index(
+        &self,
+        id: &str,
+        step_index: i32,
+    ) -> Result<Session> {
+        let result =
+            sqlx::query("UPDATE sessions SET pipeline_step_index = ? WHERE id = ?")
+                .bind(step_index)
+                .bind(id)
+                .execute(self.db.pool())
+                .await
+                .map_err(DbError::from)?;
+
+        if result.rows_affected() == 0 {
+            return Err(crate::error::Error::NotFound(format!("session {id}")));
+        }
+
+        self.get(id)
+            .await?
+            .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
+    }
+
     /// Hard-delete a session from the database.
     ///
     /// # Errors
