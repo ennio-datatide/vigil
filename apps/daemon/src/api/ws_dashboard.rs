@@ -10,6 +10,9 @@ use axum::response::IntoResponse;
 use futures::{SinkExt, StreamExt};
 use serde_json::json;
 
+use std::sync::Arc;
+
+use crate::db::sqlite::SqliteDb;
 use crate::deps::AppDeps;
 use crate::events::AppEvent;
 use crate::services::notification_store::NotificationStore;
@@ -21,6 +24,66 @@ pub(crate) async fn ws_dashboard(
     State(deps): State<AppDeps>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_dashboard(socket, deps))
+}
+
+/// Convert an [`AppEvent`] into a JSON payload for the dashboard client.
+///
+/// Returns `None` for internal-only events that should not be forwarded.
+async fn event_to_json(event: &AppEvent, db: &Arc<SqliteDb>) -> Option<serde_json::Value> {
+    match event {
+        AppEvent::SessionUpdate { session } => {
+            // Fetch fresh from DB for consistency.
+            let store = SessionStore::new(Arc::clone(db));
+            if let Ok(Some(fresh)) = store.get(&session.id).await {
+                Some(json!({ "type": "session_update", "session": fresh }))
+            } else {
+                None
+            }
+        }
+        AppEvent::SessionSpawned { session } => Some(json!({
+            "type": "session_update",
+            "session": session,
+        })),
+        AppEvent::SessionRemoved { session_id } => Some(json!({
+            "type": "session_removed",
+            "sessionId": session_id,
+        })),
+        AppEvent::NotificationCreated { notification_id } => {
+            let store = NotificationStore::new(Arc::clone(db));
+            if let Ok(Some(notification)) = store.get_by_id(*notification_id).await {
+                Some(json!({ "type": "notification", "notification": notification }))
+            } else {
+                None
+            }
+        }
+        AppEvent::MemoryUpdated { memory_id } => Some(json!({
+            "type": "memory_updated",
+            "memoryId": memory_id,
+        })),
+        AppEvent::ActaRefreshed { project_path } => Some(json!({
+            "type": "acta_refreshed",
+            "projectPath": project_path,
+        })),
+        AppEvent::ChildSpawned { parent_id, child_id } => Some(json!({
+            "type": "child_spawned",
+            "parentId": parent_id,
+            "childId": child_id,
+        })),
+        AppEvent::ChildCompleted { parent_id, child_id, success } => Some(json!({
+            "type": "child_completed",
+            "parentId": parent_id,
+            "childId": child_id,
+            "success": success,
+        })),
+        AppEvent::StatusChanged { session_id, old_status, new_status } => Some(json!({
+            "type": "status_changed",
+            "sessionId": session_id,
+            "oldStatus": old_status,
+            "newStatus": new_status,
+        })),
+        // HookEvent, CompactionRequested, SessionSpawnFailed — internal only
+        _ => None,
+    }
 }
 
 /// Main loop for a single dashboard WebSocket connection.
@@ -52,43 +115,7 @@ async fn handle_dashboard(socket: WebSocket, deps: AppDeps) {
         loop {
             match event_rx.recv().await {
                 Ok(event) => {
-                    let msg = match &event {
-                        AppEvent::SessionUpdate { session } => {
-                            // Fetch fresh from DB for consistency.
-                            let store = SessionStore::new(db.clone());
-                            if let Ok(Some(fresh)) = store.get(&session.id).await {
-                                Some(json!({
-                                    "type": "session_update",
-                                    "session": fresh,
-                                }))
-                            } else {
-                                None
-                            }
-                        }
-                        AppEvent::SessionSpawned { session } => Some(json!({
-                            "type": "session_update",
-                            "session": session,
-                        })),
-                        AppEvent::SessionRemoved { session_id } => Some(json!({
-                            "type": "session_removed",
-                            "sessionId": session_id,
-                        })),
-                        AppEvent::NotificationCreated { notification_id } => {
-                            let store = NotificationStore::new(db.clone());
-                            if let Ok(Some(notification)) =
-                                store.get_by_id(*notification_id).await
-                            {
-                                Some(json!({
-                                    "type": "notification",
-                                    "notification": notification,
-                                }))
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
-
+                    let msg = event_to_json(&event, &db).await;
                     if let Some(payload) = msg
                         && sender
                             .send(Message::Text(payload.to_string().into()))
