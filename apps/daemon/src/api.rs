@@ -10,6 +10,7 @@ pub(crate) mod notifications;
 pub(crate) mod pipelines;
 pub(crate) mod projects;
 pub(crate) mod sessions;
+pub(crate) mod settings;
 pub(crate) mod skills;
 
 use axum::routing::{delete, get, patch, post, put};
@@ -41,6 +42,11 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/pipelines/{id}", get(pipelines::get_pipeline))
         .route("/pipelines/{id}", put(pipelines::update_pipeline))
         .route("/pipelines/{id}", delete(pipelines::delete_pipeline))
+        .route(
+            "/settings/telegram",
+            get(settings::get_telegram).put(settings::put_telegram),
+        )
+        .route("/settings/telegram/test", post(settings::test_telegram))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
