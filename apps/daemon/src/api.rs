@@ -3,6 +3,7 @@
 //! Defines the Axum router, health endpoint, authentication middleware,
 //! and route modules.
 
+pub(crate) mod events;
 pub mod health;
 pub mod middleware;
 pub(crate) mod projects;
@@ -34,6 +35,7 @@ pub fn router(deps: AppDeps) -> Router {
 
     Router::new()
         .route("/health", get(health::health))
+        .route("/events", post(events::ingest_event))
         .nest("/api", api_routes)
         .layer(CorsLayer::permissive())
         .with_state(deps)

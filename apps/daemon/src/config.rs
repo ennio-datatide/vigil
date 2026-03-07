@@ -69,6 +69,27 @@ impl Config {
         })
     }
 
+    /// Build a config rooted in `base` for use in tests.
+    ///
+    /// All paths are derived from `base` so each test gets an isolated
+    /// filesystem without touching the real `~/.praefectus`.
+    #[cfg(test)]
+    #[must_use]
+    pub fn for_testing(base: &std::path::Path) -> Self {
+        Self {
+            server_port: 0,
+            web_port: 0,
+            praefectus_home: base.to_path_buf(),
+            db_path: base.join("test.db"),
+            logs_dir: base.join("logs"),
+            skills_dir: base.join("skills"),
+            pid_file: base.join("daemon.pid"),
+            worktree_base: base.join("worktrees"),
+            api_token: None,
+            dashboard_url: None,
+        }
+    }
+
     /// Create all required directories under the daemon home.
     ///
     /// # Errors
