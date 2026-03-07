@@ -11,3 +11,5 @@ dist/
 docs/plans/
 test-results/
 *.tsbuildinfo
+# Rust
+apps/daemon/target/
