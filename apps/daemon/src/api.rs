@@ -7,11 +7,12 @@ pub(crate) mod events;
 pub mod health;
 pub mod middleware;
 pub(crate) mod notifications;
+pub(crate) mod pipelines;
 pub(crate) mod projects;
 pub(crate) mod sessions;
 pub(crate) mod skills;
 
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 use tower_http::cors::CorsLayer;
 
@@ -35,6 +36,11 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/notifications/read-all", patch(notifications::read_all))
         .route("/notifications/{id}/read", patch(notifications::mark_read))
         .route("/skills", get(skills::list_skills))
+        .route("/pipelines", get(pipelines::list_pipelines))
+        .route("/pipelines", post(pipelines::create_pipeline))
+        .route("/pipelines/{id}", get(pipelines::get_pipeline))
+        .route("/pipelines/{id}", put(pipelines::update_pipeline))
+        .route("/pipelines/{id}", delete(pipelines::delete_pipeline))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
