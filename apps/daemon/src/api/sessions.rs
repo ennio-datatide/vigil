@@ -111,6 +111,12 @@ pub(crate) async fn restart_session(
         )));
     }
 
+    if existing.worktree_path.is_none() {
+        return Err(Error::BadRequest(
+            "No worktree path — cannot restart".into(),
+        ));
+    }
+
     let session = store.reset_to_queued(&id).await?;
 
     let _ = deps.event_bus.emit(AppEvent::SessionUpdate {
@@ -140,13 +146,19 @@ pub(crate) async fn resume_session(
         )));
     }
 
+    if original.worktree_path.is_none() {
+        return Err(Error::BadRequest(
+            "No worktree path found for session — cannot resume".into(),
+        ));
+    }
+
     let new_id = uuid::Uuid::new_v4().to_string();
     let input = CreateSessionInput {
         project_path: original.project_path,
-        prompt: original.prompt,
+        prompt: "Resumed conversation".into(),
         skill: None,
         role: None,
-        parent_id: original.parent_id,
+        parent_id: Some(id.clone()),
         skip_permissions: None,
         pipeline_id: None,
     };
