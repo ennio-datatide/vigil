@@ -5,6 +5,7 @@
 
 pub mod health;
 pub mod middleware;
+pub(crate) mod projects;
 pub(crate) mod sessions;
 
 use axum::routing::{delete, get, post};
@@ -23,6 +24,9 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/sessions/{id}/remove", delete(sessions::remove_session))
         .route("/sessions/{id}/restart", post(sessions::restart_session))
         .route("/sessions/{id}/resume", post(sessions::resume_session))
+        .route("/projects", get(projects::list_projects))
+        .route("/projects", post(projects::create_project))
+        .route("/projects/{path}", delete(projects::delete_project))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
