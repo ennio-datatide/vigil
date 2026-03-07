@@ -15,6 +15,7 @@ pub(crate) mod sessions;
 pub(crate) mod settings;
 pub(crate) mod skills;
 pub(crate) mod sub_sessions;
+pub(crate) mod vigil;
 pub(crate) mod ws_dashboard;
 pub(crate) mod ws_terminal;
 
@@ -62,6 +63,9 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/memory/search", post(memory::search_memories))
         .route("/memory/{id}", delete(memory::delete_memory))
         .route("/fs/dirs", get(filesystem::list_dirs))
+        .route("/vigil/status", get(vigil::get_status))
+        .route("/vigil/chat", post(vigil::chat))
+        .route("/vigil/acta", get(vigil::get_acta))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,

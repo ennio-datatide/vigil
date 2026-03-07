@@ -109,7 +109,7 @@ impl VigilService {
     }
 
     /// Ensure a Vigil exists for the given project.
-    async fn ensure_vigil(&self, project_path: &str) {
+    pub(crate) async fn ensure_vigil(&self, project_path: &str) {
         let mut vigils = self.vigils.lock().await;
         if !vigils.contains_key(project_path) {
             tracing::info!(project_path, "starting vigil for project");
