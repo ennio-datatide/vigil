@@ -1,0 +1,383 @@
+//! Context size monitor (Lictor).
+//!
+//! [`LictorService`] is a programmatic monitor that subscribes to hook events,
+//! tracks per-session token count estimates, and evaluates compaction thresholds.
+//! It never interrupts running sessions — it only observes and reports.
+//!
+//! Tiered thresholds:
+//! - **Background** (>80%): summarize oldest 30% via branch (Task 4.2).
+//! - **Aggressive** (>85%): summarize oldest 50% via branch (Task 4.2).
+//! - **Emergency** (>95%): hard truncation (Task 4.2).
+
+#![allow(dead_code)] // Ahead of consumers (Task 4.2, 4.3).
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use crate::db::models::SessionStatus;
+use crate::events::{AppEvent, EventBus};
+
+/// Default maximum context window size for Claude (tokens).
+const DEFAULT_MAX_TOKENS: usize = 200_000;
+
+/// Rough heuristic: 1 token ≈ 4 characters.
+const CHARS_PER_TOKEN: usize = 4;
+
+/// Estimated context state for a session.
+#[derive(Debug, Clone)]
+pub(crate) struct ContextState {
+    /// Estimated token count.
+    pub token_count: usize,
+    /// Maximum context window size.
+    pub max_tokens: usize,
+    /// Number of compaction retries attempted.
+    pub retry_count: u32,
+}
+
+impl ContextState {
+    fn new() -> Self {
+        Self {
+            token_count: 0,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            retry_count: 0,
+        }
+    }
+
+    /// Context usage as a fraction (0.0 to 1.0+).
+    #[allow(clippy::cast_precision_loss)] // Token counts fit well within f64 mantissa.
+    pub(crate) fn usage(&self) -> f64 {
+        self.token_count as f64 / self.max_tokens as f64
+    }
+}
+
+/// Compaction level based on context usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompactionLevel {
+    /// Below 80% — no action needed.
+    None,
+    /// 80–85% — summarize oldest 30% via branch.
+    Background,
+    /// 85–95% — summarize oldest 50% via branch.
+    Aggressive,
+    /// >95% — hard truncation.
+    Emergency,
+}
+
+impl CompactionLevel {
+    /// Determine the compaction level from a usage fraction.
+    pub(crate) fn from_usage(usage: f64) -> Self {
+        if usage > 0.95 {
+            Self::Emergency
+        } else if usage > 0.85 {
+            Self::Aggressive
+        } else if usage > 0.80 {
+            Self::Background
+        } else {
+            Self::None
+        }
+    }
+}
+
+/// Programmatic context size monitor.
+///
+/// Subscribes to the event bus, tracks per-session estimated token counts,
+/// and evaluates compaction thresholds. Does not take any action itself —
+/// that is left to the compaction service (Task 4.2).
+pub(crate) struct LictorService {
+    event_bus: Arc<EventBus>,
+    /// Per-session estimated token counts.
+    context_sizes: Arc<Mutex<HashMap<String, ContextState>>>,
+}
+
+impl LictorService {
+    /// Create a new Lictor service.
+    #[must_use]
+    pub(crate) fn new(event_bus: Arc<EventBus>) -> Self {
+        Self {
+            event_bus,
+            context_sizes: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Update the estimated token count for a session.
+    pub(crate) fn update_token_count(&self, session_id: &str, token_count: usize) {
+        let mut map = self.context_sizes.lock().expect("lock poisoned");
+        let state = map
+            .entry(session_id.to_owned())
+            .or_insert_with(ContextState::new);
+        state.token_count = token_count;
+    }
+
+    /// Evaluate the compaction level for a session.
+    pub(crate) fn evaluate(&self, session_id: &str) -> CompactionLevel {
+        let map = self.context_sizes.lock().expect("lock poisoned");
+        match map.get(session_id) {
+            Some(state) => CompactionLevel::from_usage(state.usage()),
+            None => CompactionLevel::None,
+        }
+    }
+
+    /// Get the current context state for a session, if tracked.
+    pub(crate) fn get_state(&self, session_id: &str) -> Option<ContextState> {
+        let map = self.context_sizes.lock().expect("lock poisoned");
+        map.get(session_id).cloned()
+    }
+
+    /// Remove a session from tracking (e.g., when it ends).
+    pub(crate) fn remove_session(&self, session_id: &str) {
+        let mut map = self.context_sizes.lock().expect("lock poisoned");
+        map.remove(session_id);
+    }
+
+    /// Start the event-driven monitoring loop as a background task.
+    ///
+    /// Subscribes to the event bus and processes:
+    /// - `HookEvent`: estimates token count from payload.
+    /// - `StatusChanged` to terminal states: removes the session from tracking.
+    ///
+    /// Returns a [`JoinHandle`](tokio::task::JoinHandle) that the caller
+    /// should store and abort on shutdown.
+    pub(crate) fn start(self) -> tokio::task::JoinHandle<()> {
+        let mut rx = self.event_bus.subscribe();
+        let context_sizes = Arc::clone(&self.context_sizes);
+        let event_bus = Arc::clone(&self.event_bus);
+
+        // Keep `self` alive is not needed — we moved the Arcs out.
+        // Build a helper that shares the same map.
+        let monitor = LictorMonitor {
+            event_bus,
+            context_sizes,
+        };
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => monitor.handle_event(&event),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(skipped = n, "lictor event bus lagged");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("lictor event bus closed, shutting down");
+                        break;
+                    }
+                }
+            }
+        })
+    }
+}
+
+/// Internal monitor that processes events from the bus.
+struct LictorMonitor {
+    event_bus: Arc<EventBus>,
+    context_sizes: Arc<Mutex<HashMap<String, ContextState>>>,
+}
+
+impl LictorMonitor {
+    /// Handle a single event from the bus.
+    fn handle_event(&self, event: &AppEvent) {
+        match event {
+            AppEvent::HookEvent {
+                session_id,
+                event_type: _,
+                payload,
+            } => {
+                self.process_hook_event(session_id, payload.as_ref());
+            }
+            AppEvent::StatusChanged {
+                session_id,
+                new_status,
+                ..
+            } => {
+                if is_terminal(new_status) {
+                    let mut map = self.context_sizes.lock().expect("lock poisoned");
+                    map.remove(session_id);
+                    tracing::debug!(%session_id, "lictor: removed terminal session");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Extract token count from a hook event payload and update tracking.
+    fn process_hook_event(&self, session_id: &str, payload: Option<&serde_json::Value>) {
+        let token_count = payload.and_then(extract_token_count);
+
+        if let Some(count) = token_count {
+            let mut map = self.context_sizes.lock().expect("lock poisoned");
+            let state = map
+                .entry(session_id.to_owned())
+                .or_insert_with(ContextState::new);
+            state.token_count = count;
+
+            let usage = state.usage();
+            let level = CompactionLevel::from_usage(usage);
+
+            if level != CompactionLevel::None {
+                tracing::info!(
+                    %session_id,
+                    token_count = count,
+                    usage_pct = format!("{:.1}%", usage * 100.0),
+                    ?level,
+                    "lictor: context threshold reached"
+                );
+            }
+        }
+    }
+}
+
+/// Check if a session status is terminal.
+fn is_terminal(status: &SessionStatus) -> bool {
+    matches!(
+        status,
+        SessionStatus::Completed
+            | SessionStatus::Failed
+            | SessionStatus::Cancelled
+            | SessionStatus::Interrupted
+    )
+}
+
+/// Extract a token count from a hook event payload.
+///
+/// Looks for a `tokenCount` field first. Falls back to estimating from the
+/// `output` field length using the rough heuristic of 1 token ≈ 4 chars.
+fn extract_token_count(payload: &serde_json::Value) -> Option<usize> {
+    // Direct token count field.
+    if let Some(count) = payload
+        .get("tokenCount")
+        .and_then(serde_json::Value::as_u64)
+    {
+        #[allow(clippy::cast_possible_truncation)] // Token counts never exceed usize.
+        return Some(count as usize);
+    }
+
+    // Estimate from output length.
+    if let Some(output) = payload.get("output").and_then(serde_json::Value::as_str) {
+        let estimated = output.len() / CHARS_PER_TOKEN;
+        return Some(estimated);
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compaction_level_thresholds() {
+        assert_eq!(CompactionLevel::from_usage(0.0), CompactionLevel::None);
+        assert_eq!(CompactionLevel::from_usage(0.5), CompactionLevel::None);
+        assert_eq!(CompactionLevel::from_usage(0.79), CompactionLevel::None);
+        assert_eq!(CompactionLevel::from_usage(0.80), CompactionLevel::None);
+
+        assert_eq!(CompactionLevel::from_usage(0.801), CompactionLevel::Background);
+        assert_eq!(CompactionLevel::from_usage(0.85), CompactionLevel::Background);
+
+        assert_eq!(CompactionLevel::from_usage(0.851), CompactionLevel::Aggressive);
+        assert_eq!(CompactionLevel::from_usage(0.90), CompactionLevel::Aggressive);
+        assert_eq!(CompactionLevel::from_usage(0.95), CompactionLevel::Aggressive);
+
+        assert_eq!(CompactionLevel::from_usage(0.951), CompactionLevel::Emergency);
+        assert_eq!(CompactionLevel::from_usage(1.0), CompactionLevel::Emergency);
+        assert_eq!(CompactionLevel::from_usage(1.5), CompactionLevel::Emergency);
+    }
+
+    #[test]
+    fn context_state_usage_calculation() {
+        let state = ContextState {
+            token_count: 100_000,
+            max_tokens: 200_000,
+            retry_count: 0,
+        };
+        let usage = state.usage();
+        assert!((usage - 0.5).abs() < f64::EPSILON);
+
+        let full = ContextState {
+            token_count: 200_000,
+            max_tokens: 200_000,
+            retry_count: 0,
+        };
+        assert!((full.usage() - 1.0).abs() < f64::EPSILON);
+
+        let empty = ContextState::new();
+        assert!((empty.usage()).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn update_and_evaluate() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(event_bus);
+
+        // No state yet — should be None level.
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::None);
+
+        // Update to 50% usage.
+        service.update_token_count("s-1", 100_000);
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::None);
+
+        // Update to 82% usage — Background.
+        service.update_token_count("s-1", 164_000);
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::Background);
+
+        // Update to 90% usage — Aggressive.
+        service.update_token_count("s-1", 180_000);
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::Aggressive);
+
+        // Update to 96% usage — Emergency.
+        service.update_token_count("s-1", 192_000);
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::Emergency);
+    }
+
+    #[test]
+    fn remove_session_cleans_up() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(event_bus);
+
+        service.update_token_count("s-1", 100_000);
+        assert!(service.get_state("s-1").is_some());
+
+        service.remove_session("s-1");
+        assert!(service.get_state("s-1").is_none());
+        assert_eq!(service.evaluate("s-1"), CompactionLevel::None);
+    }
+
+    #[test]
+    fn get_state_returns_none_for_unknown() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(event_bus);
+        assert!(service.get_state("nonexistent").is_none());
+    }
+
+    #[test]
+    fn extract_token_count_from_direct_field() {
+        let payload = serde_json::json!({ "tokenCount": 150_000 });
+        assert_eq!(extract_token_count(&payload), Some(150_000));
+    }
+
+    #[test]
+    fn extract_token_count_from_output_length() {
+        // 400 chars / 4 chars per token = 100 tokens.
+        let output = "a".repeat(400);
+        let payload = serde_json::json!({ "output": output });
+        assert_eq!(extract_token_count(&payload), Some(100));
+    }
+
+    #[test]
+    fn extract_token_count_prefers_direct_over_estimate() {
+        let payload = serde_json::json!({
+            "tokenCount": 42,
+            "output": "a".repeat(1000),
+        });
+        assert_eq!(extract_token_count(&payload), Some(42));
+    }
+
+    #[test]
+    fn extract_token_count_returns_none_for_empty() {
+        let payload = serde_json::json!({});
+        assert_eq!(extract_token_count(&payload), None);
+    }
+}
