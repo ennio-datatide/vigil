@@ -4,7 +4,7 @@
 //! from a running parent session, enforcing concurrency limits and managing
 //! the lifecycle of child sessions.
 
-#![allow(dead_code)] // Service is constructed by later tasks (Task 3.4).
+#![allow(dead_code)] // Some methods are used by later tasks.
 
 use std::sync::Arc;
 
@@ -42,6 +42,7 @@ pub(crate) struct SpawnInput {
 /// Branches are read-only forks of the parent context, used for thinking and
 /// research. Workers are independent task executors with their own worktrees,
 /// used for parallel implementation work.
+#[derive(Clone)]
 pub(crate) struct SubSessionService {
     db: Arc<SqliteDb>,
     event_bus: Arc<EventBus>,

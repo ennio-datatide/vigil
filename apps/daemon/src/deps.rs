@@ -16,6 +16,7 @@ use crate::process::output_manager::OutputManager;
 use crate::process::pty_manager::PtyManager;
 use crate::services::memory_search::MemorySearch;
 use crate::services::memory_store::MemoryStore;
+use crate::services::sub_session::SubSessionService;
 
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone)]
@@ -34,6 +35,8 @@ pub struct AppDeps {
     pub memory_store: MemoryStore,
     /// Hybrid memory search service.
     pub memory_search: MemorySearch,
+    /// Sub-session spawning service.
+    pub sub_session_service: SubSessionService,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -49,6 +52,7 @@ impl std::fmt::Debug for AppDeps {
             .field("lance", &"LanceDb { .. }")
             .field("memory_store", &"MemoryStore { .. }")
             .field("memory_search", &"MemorySearch { .. }")
+            .field("sub_session_service", &"SubSessionService { .. }")
             .finish()
     }
 }
@@ -71,13 +75,16 @@ impl AppDeps {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let db = Arc::new(db);
+        let event_bus = Arc::new(event_bus);
         let memory_store = MemoryStore::new(Arc::clone(&db), lance.clone());
         let memory_search = MemorySearch::new(Arc::clone(&db), lance.clone());
+        let sub_session_service =
+            SubSessionService::new(Arc::clone(&db), Arc::clone(&event_bus));
 
         Ok(Self {
             config: Arc::new(config),
             db,
-            event_bus: Arc::new(event_bus),
+            event_bus,
             pty_manager: Arc::new(pty_manager),
             output_manager: Arc::new(output_manager),
             shutdown_tx: Arc::new(shutdown_tx),
@@ -85,6 +92,7 @@ impl AppDeps {
             lance,
             memory_store,
             memory_search,
+            sub_session_service,
         })
     }
 }
