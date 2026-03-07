@@ -13,3 +13,4 @@ test-results/
 *.tsbuildinfo
 # Rust
 apps/daemon/target/
+.fastembed_cache/
