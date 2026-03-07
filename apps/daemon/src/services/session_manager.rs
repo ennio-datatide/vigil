@@ -80,6 +80,8 @@ impl SessionManager {
                         }
 
                         // Detect child session completion and emit ChildCompleted.
+                        // success = true only for Completed; both Failed and Cancelled
+                        // map to success = false (cancelled is treated as unsuccessful).
                         if matches!(
                             new_status,
                             SessionStatus::Completed
@@ -204,6 +206,7 @@ impl SessionManager {
     ) -> anyhow::Result<()> {
         let store = SessionStore::new(self.db.clone());
         let Some(session) = store.get(session_id).await? else {
+            tracing::debug!(session_id, "session not found for child completion check");
             return Ok(());
         };
 
