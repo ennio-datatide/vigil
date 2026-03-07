@@ -150,6 +150,43 @@ impl SessionStore {
             .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
     }
 
+    /// Transition a session to running state with worktree, start time, and git metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session is not found or the update fails.
+    #[allow(dead_code)] // Called by agent spawner (Task 1.12).
+    pub(crate) async fn update_running(
+        &self,
+        id: &str,
+        worktree_path: Option<&str>,
+        started_at: i64,
+        git_metadata: Option<&GitMetadata>,
+    ) -> Result<Session> {
+        let git_json: Option<String> = git_metadata
+            .map(|m| serde_json::to_string(m).expect("GitMetadata serialization cannot fail"));
+
+        let result = sqlx::query(
+            "UPDATE sessions SET status = 'running', worktree_path = ?, started_at = ?, \
+             git_metadata = ? WHERE id = ?",
+        )
+        .bind(worktree_path)
+        .bind(started_at)
+        .bind(&git_json)
+        .bind(id)
+        .execute(self.db.pool())
+        .await
+        .map_err(DbError::from)?;
+
+        if result.rows_affected() == 0 {
+            return Err(crate::error::Error::NotFound(format!("session {id}")));
+        }
+
+        self.get(id)
+            .await?
+            .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
+    }
+
     /// Reset a session back to queued state (for restart).
     ///
     /// # Errors
