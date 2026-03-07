@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use crate::config::Config;
+use crate::db::kv::KvStore;
 use crate::db::lance::LanceDb;
 use crate::db::sqlite::SqliteDb;
 use crate::error::Result;
@@ -37,6 +38,8 @@ pub struct AppDeps {
     pub memory_search: MemorySearch,
     /// Sub-session spawning service.
     pub sub_session_service: SubSessionService,
+    /// Key-value store (redb).
+    pub kv: KvStore,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -53,6 +56,7 @@ impl std::fmt::Debug for AppDeps {
             .field("memory_store", &"MemoryStore { .. }")
             .field("memory_search", &"MemorySearch { .. }")
             .field("sub_session_service", &"SubSessionService { .. }")
+            .field("kv", &"KvStore { .. }")
             .finish()
     }
 }
@@ -74,6 +78,8 @@ impl AppDeps {
         let output_manager = OutputManager::new(logs_dir);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+        let kv = KvStore::open(&config.kv_path)?;
+
         let db = Arc::new(db);
         let event_bus = Arc::new(event_bus);
         let memory_store = MemoryStore::new(Arc::clone(&db), lance.clone());
@@ -93,6 +99,7 @@ impl AppDeps {
             memory_store,
             memory_search,
             sub_session_service,
+            kv,
         })
     }
 }

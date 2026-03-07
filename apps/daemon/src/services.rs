@@ -17,3 +17,4 @@ pub(crate) mod session_manager;
 pub(crate) mod session_store;
 pub(crate) mod settings_store;
 pub(crate) mod sub_session;
+pub(crate) mod vigil;
