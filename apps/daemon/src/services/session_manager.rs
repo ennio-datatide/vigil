@@ -78,6 +78,26 @@ impl SessionManager {
                                 "pipeline advancement failed"
                             );
                         }
+
+                        // Detect child session completion and emit ChildCompleted.
+                        if matches!(
+                            new_status,
+                            SessionStatus::Completed
+                                | SessionStatus::Failed
+                                | SessionStatus::Cancelled
+                        ) && let Err(e) = self
+                            .handle_child_completion(
+                                &session_id,
+                                new_status == SessionStatus::Completed,
+                            )
+                            .await
+                        {
+                            tracing::error!(
+                                session_id,
+                                error = %e,
+                                "child completion handling failed"
+                            );
+                        }
                     }
                     Ok(_) => {} // Ignore other events.
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -164,6 +184,46 @@ impl SessionManager {
         let notif_store = NotificationStore::new(self.db.clone());
         let notif = notif_store
             .create(session_id, NotificationType::NeedsInput, message)
+            .await?;
+        let _ = self.event_bus.emit(AppEvent::NotificationCreated {
+            notification_id: notif.id,
+        });
+
+        Ok(())
+    }
+
+    /// Handle child session completion.
+    ///
+    /// When a session with a `parent_id` reaches a terminal status, emits a
+    /// [`AppEvent::ChildCompleted`] event and creates a notification for the
+    /// parent session.
+    async fn handle_child_completion(
+        &self,
+        session_id: &str,
+        success: bool,
+    ) -> anyhow::Result<()> {
+        let store = SessionStore::new(self.db.clone());
+        let Some(session) = store.get(session_id).await? else {
+            return Ok(());
+        };
+
+        let Some(parent_id) = &session.parent_id else {
+            return Ok(()); // Not a child session.
+        };
+
+        let _ = self.event_bus.emit(AppEvent::ChildCompleted {
+            parent_id: parent_id.clone(),
+            child_id: session_id.to_string(),
+            success,
+        });
+
+        // Create a notification for the parent.
+        let status_label = if success { "completed" } else { "failed" };
+        let message = format!("Child session {session_id} {status_label}");
+
+        let notif_store = NotificationStore::new(self.db.clone());
+        let notif = notif_store
+            .create(parent_id, NotificationType::SessionDone, &message)
             .await?;
         let _ = self.event_bus.emit(AppEvent::NotificationCreated {
             notification_id: notif.id,
@@ -564,6 +624,160 @@ mod tests {
 
         let all_sessions = session_store.list().await.unwrap();
         assert_eq!(all_sessions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn child_completion_emits_event() {
+        let (db, _dir) = test_db().await;
+        let event_bus = Arc::new(EventBus::new(64));
+        let mut rx = event_bus.subscribe();
+
+        let session_store = SessionStore::new(db.clone());
+
+        // Create parent session.
+        session_store
+            .create("parent-1", &sample_session_input())
+            .await
+            .unwrap();
+
+        // Create child session with parent_id.
+        let child_input = CreateSessionInput {
+            parent_id: Some("parent-1".to_string()),
+            ..sample_session_input()
+        };
+        session_store
+            .create("child-1", &child_input)
+            .await
+            .unwrap();
+
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(_dir.path())),
+        };
+
+        manager
+            .handle_child_completion("child-1", true)
+            .await
+            .unwrap();
+
+        // Verify ChildCompleted event was emitted.
+        let event = rx.try_recv().unwrap();
+        match event {
+            AppEvent::ChildCompleted {
+                parent_id,
+                child_id,
+                success,
+            } => {
+                assert_eq!(parent_id, "parent-1");
+                assert_eq!(child_id, "child-1");
+                assert!(success);
+            }
+            other => panic!("expected ChildCompleted, got {other:?}"),
+        }
+
+        // Verify notification was created for the parent.
+        let notif_store = NotificationStore::new(db.clone());
+        let notifications = notif_store.list(false).await.unwrap();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].session_id, "parent-1");
+        assert_eq!(
+            notifications[0].notification_type,
+            NotificationType::SessionDone
+        );
+        assert!(notifications[0].message.contains("child-1"));
+        assert!(notifications[0].message.contains("completed"));
+    }
+
+    #[tokio::test]
+    async fn non_child_completion_no_event() {
+        let (db, _dir) = test_db().await;
+        let event_bus = Arc::new(EventBus::new(64));
+        let mut rx = event_bus.subscribe();
+
+        let session_store = SessionStore::new(db.clone());
+
+        // Create session without parent_id.
+        session_store
+            .create("sess-1", &sample_session_input())
+            .await
+            .unwrap();
+
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(_dir.path())),
+        };
+
+        manager
+            .handle_child_completion("sess-1", true)
+            .await
+            .unwrap();
+
+        // No events should be emitted.
+        assert!(rx.try_recv().is_err());
+
+        // No notifications should be created.
+        let notif_store = NotificationStore::new(db.clone());
+        let notifications = notif_store.list(false).await.unwrap();
+        assert!(notifications.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_child_emits_event_with_success_false() {
+        let (db, _dir) = test_db().await;
+        let event_bus = Arc::new(EventBus::new(64));
+        let mut rx = event_bus.subscribe();
+
+        let session_store = SessionStore::new(db.clone());
+
+        // Create parent and child sessions.
+        session_store
+            .create("parent-1", &sample_session_input())
+            .await
+            .unwrap();
+
+        let child_input = CreateSessionInput {
+            parent_id: Some("parent-1".to_string()),
+            ..sample_session_input()
+        };
+        session_store
+            .create("child-1", &child_input)
+            .await
+            .unwrap();
+
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(_dir.path())),
+        };
+
+        // Handle as failed (success = false).
+        manager
+            .handle_child_completion("child-1", false)
+            .await
+            .unwrap();
+
+        // Verify ChildCompleted event with success=false.
+        let event = rx.try_recv().unwrap();
+        match event {
+            AppEvent::ChildCompleted {
+                parent_id,
+                child_id,
+                success,
+            } => {
+                assert_eq!(parent_id, "parent-1");
+                assert_eq!(child_id, "child-1");
+                assert!(!success);
+            }
+            other => panic!("expected ChildCompleted, got {other:?}"),
+        }
+
+        // Verify notification says "failed".
+        let notif_store = NotificationStore::new(db.clone());
+        let notifications = notif_store.list(false).await.unwrap();
+        assert_eq!(notifications.len(), 1);
+        assert!(notifications[0].message.contains("failed"));
     }
 
     #[tokio::test]
