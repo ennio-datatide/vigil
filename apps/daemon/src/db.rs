@@ -2,6 +2,6 @@
 //!
 //! Provides the `SQLite` connection pool and model types.
 
-pub mod lance;
-pub mod models;
-pub mod sqlite;
+pub(crate) mod lance;
+pub(crate) mod models;
+pub(crate) mod sqlite;
