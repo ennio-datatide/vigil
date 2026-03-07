@@ -76,6 +76,31 @@ impl CompactionLevel {
             Self::None
         }
     }
+
+    /// String representation for event serialization.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Background => "background",
+            Self::Aggressive => "aggressive",
+            Self::Emergency => "emergency",
+        }
+    }
+}
+
+impl std::fmt::Display for CompactionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A compaction action to be taken on a session.
+#[derive(Debug, Clone)]
+pub(crate) struct CompactionAction {
+    pub session_id: String,
+    pub level: CompactionLevel,
+    /// Fraction of oldest content to summarize (0.3 for Background, 0.5 for Aggressive, 0.0 for Emergency).
+    pub summarize_fraction: f64,
 }
 
 /// Programmatic context size monitor.
@@ -127,6 +152,83 @@ impl LictorService {
     pub(crate) fn remove_session(&self, session_id: &str) {
         let mut map = self.context_sizes.lock().expect("lock poisoned");
         map.remove(session_id);
+    }
+
+    /// Determine if a compaction action is needed for a session.
+    ///
+    /// Returns `Some(CompactionAction)` if the session's context usage exceeds
+    /// a threshold, `None` otherwise.
+    pub(crate) fn determine_action(&self, session_id: &str) -> Option<CompactionAction> {
+        let map = self.context_sizes.lock().expect("lock poisoned");
+        let state = map.get(session_id)?;
+        let level = CompactionLevel::from_usage(state.usage());
+
+        match level {
+            CompactionLevel::None => None,
+            CompactionLevel::Background => Some(CompactionAction {
+                session_id: session_id.to_owned(),
+                level,
+                summarize_fraction: 0.3,
+            }),
+            CompactionLevel::Aggressive => Some(CompactionAction {
+                session_id: session_id.to_owned(),
+                level,
+                summarize_fraction: 0.5,
+            }),
+            CompactionLevel::Emergency => Some(CompactionAction {
+                session_id: session_id.to_owned(),
+                level,
+                summarize_fraction: 0.0,
+            }),
+        }
+    }
+
+    /// Execute a compaction action.
+    ///
+    /// - **Background / Aggressive**: emits a `CompactionRequested` event so that
+    ///   a subscriber (e.g., session manager) can spawn a summarization branch.
+    /// - **Emergency**: directly truncates by resetting the token count to 50%
+    ///   of max tokens and logs the dropped content for post-session review.
+    pub(crate) fn execute_compaction(&self, action: &CompactionAction) {
+        match action.level {
+            CompactionLevel::Background | CompactionLevel::Aggressive => {
+                tracing::info!(
+                    session_id = %action.session_id,
+                    level = %action.level,
+                    summarize_fraction = action.summarize_fraction,
+                    "lictor: emitting compaction request"
+                );
+
+                let _ = self.event_bus.emit(AppEvent::CompactionRequested {
+                    session_id: action.session_id.clone(),
+                    level: action.level.as_str().to_owned(),
+                    summarize_fraction: action.summarize_fraction,
+                });
+            }
+            CompactionLevel::Emergency => {
+                let mut map = self.context_sizes.lock().expect("lock poisoned");
+                if let Some(state) = map.get_mut(&action.session_id) {
+                    let old_count = state.token_count;
+                    let new_count = state.max_tokens / 2;
+                    state.token_count = new_count;
+                    state.retry_count += 1;
+
+                    tracing::warn!(
+                        session_id = %action.session_id,
+                        old_token_count = old_count,
+                        new_token_count = new_count,
+                        "lictor: emergency truncation — dropped content logged for post-session review"
+                    );
+                }
+
+                let _ = self.event_bus.emit(AppEvent::CompactionRequested {
+                    session_id: action.session_id.clone(),
+                    level: action.level.as_str().to_owned(),
+                    summarize_fraction: 0.0,
+                });
+            }
+            CompactionLevel::None => {}
+        }
     }
 
     /// Start the event-driven monitoring loop as a background task.
@@ -198,29 +300,102 @@ impl LictorMonitor {
         }
     }
 
-    /// Extract token count from a hook event payload and update tracking.
+    /// Extract token count from a hook event payload, update tracking,
+    /// and trigger compaction if thresholds are crossed.
     fn process_hook_event(&self, session_id: &str, payload: Option<&serde_json::Value>) {
         let token_count = payload.and_then(extract_token_count);
 
         if let Some(count) = token_count {
-            let mut map = self.context_sizes.lock().expect("lock poisoned");
-            let state = map
-                .entry(session_id.to_owned())
-                .or_insert_with(ContextState::new);
-            state.token_count = count;
+            let action = {
+                let mut map = self.context_sizes.lock().expect("lock poisoned");
+                let state = map
+                    .entry(session_id.to_owned())
+                    .or_insert_with(ContextState::new);
+                state.token_count = count;
 
-            let usage = state.usage();
-            let level = CompactionLevel::from_usage(usage);
+                let usage = state.usage();
+                let level = CompactionLevel::from_usage(usage);
 
-            if level != CompactionLevel::None {
-                tracing::info!(
-                    %session_id,
-                    token_count = count,
-                    usage_pct = format!("{:.1}%", usage * 100.0),
-                    ?level,
-                    "lictor: context threshold reached"
-                );
+                if level != CompactionLevel::None {
+                    tracing::info!(
+                        %session_id,
+                        token_count = count,
+                        usage_pct = format!("{:.1}%", usage * 100.0),
+                        ?level,
+                        "lictor: context threshold reached"
+                    );
+                }
+
+                // Build a compaction action if needed.
+                match level {
+                    CompactionLevel::None => None,
+                    CompactionLevel::Background => Some(CompactionAction {
+                        session_id: session_id.to_owned(),
+                        level,
+                        summarize_fraction: 0.3,
+                    }),
+                    CompactionLevel::Aggressive => Some(CompactionAction {
+                        session_id: session_id.to_owned(),
+                        level,
+                        summarize_fraction: 0.5,
+                    }),
+                    CompactionLevel::Emergency => Some(CompactionAction {
+                        session_id: session_id.to_owned(),
+                        level,
+                        summarize_fraction: 0.0,
+                    }),
+                }
+            }; // Lock released here.
+
+            // Execute the compaction action outside the lock.
+            if let Some(action) = action {
+                self.execute_compaction(&action);
             }
+        }
+    }
+
+    /// Execute a compaction action from the monitor context.
+    fn execute_compaction(&self, action: &CompactionAction) {
+        match action.level {
+            CompactionLevel::Background | CompactionLevel::Aggressive => {
+                tracing::info!(
+                    session_id = %action.session_id,
+                    level = %action.level,
+                    summarize_fraction = action.summarize_fraction,
+                    "lictor: emitting compaction request"
+                );
+
+                let _ = self.event_bus.emit(AppEvent::CompactionRequested {
+                    session_id: action.session_id.clone(),
+                    level: action.level.as_str().to_owned(),
+                    summarize_fraction: action.summarize_fraction,
+                });
+            }
+            CompactionLevel::Emergency => {
+                {
+                    let mut map = self.context_sizes.lock().expect("lock poisoned");
+                    if let Some(state) = map.get_mut(&action.session_id) {
+                        let old_count = state.token_count;
+                        let new_count = state.max_tokens / 2;
+                        state.token_count = new_count;
+                        state.retry_count += 1;
+
+                        tracing::warn!(
+                            session_id = %action.session_id,
+                            old_token_count = old_count,
+                            new_token_count = new_count,
+                            "lictor: emergency truncation — dropped content logged for post-session review"
+                        );
+                    }
+                }
+
+                let _ = self.event_bus.emit(AppEvent::CompactionRequested {
+                    session_id: action.session_id.clone(),
+                    level: action.level.as_str().to_owned(),
+                    summarize_fraction: 0.0,
+                });
+            }
+            CompactionLevel::None => {}
         }
     }
 }
@@ -379,5 +554,98 @@ mod tests {
     fn extract_token_count_returns_none_for_empty() {
         let payload = serde_json::json!({});
         assert_eq!(extract_token_count(&payload), None);
+    }
+
+    #[test]
+    fn background_compaction_action() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(Arc::clone(&event_bus));
+
+        // 82% usage → Background with 0.3 fraction.
+        service.update_token_count("s-1", 164_000);
+
+        let action = service.determine_action("s-1");
+        assert!(action.is_some());
+
+        let action = action.unwrap();
+        assert_eq!(action.level, CompactionLevel::Background);
+        assert!((action.summarize_fraction - 0.3).abs() < f64::EPSILON);
+        assert_eq!(action.session_id, "s-1");
+    }
+
+    #[test]
+    fn aggressive_compaction_action() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(Arc::clone(&event_bus));
+
+        // 90% usage → Aggressive with 0.5 fraction.
+        service.update_token_count("s-1", 180_000);
+
+        let action = service.determine_action("s-1");
+        assert!(action.is_some());
+
+        let action = action.unwrap();
+        assert_eq!(action.level, CompactionLevel::Aggressive);
+        assert!((action.summarize_fraction - 0.5).abs() < f64::EPSILON);
+        assert_eq!(action.session_id, "s-1");
+    }
+
+    #[test]
+    fn emergency_compaction_truncates() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let mut rx = event_bus.subscribe();
+        let service = LictorService::new(Arc::clone(&event_bus));
+
+        // 96% usage → Emergency.
+        service.update_token_count("s-1", 192_000);
+
+        let action = service.determine_action("s-1");
+        assert!(action.is_some());
+        let action = action.unwrap();
+        assert_eq!(action.level, CompactionLevel::Emergency);
+        assert!((action.summarize_fraction - 0.0).abs() < f64::EPSILON);
+
+        // Execute emergency compaction — should truncate tokens to 50%.
+        service.execute_compaction(&action);
+
+        let state = service.get_state("s-1").unwrap();
+        assert_eq!(state.token_count, 100_000); // 200_000 / 2
+        assert_eq!(state.retry_count, 1);
+
+        // Should have emitted a CompactionRequested event.
+        let event = rx.try_recv().unwrap();
+        match event {
+            AppEvent::CompactionRequested {
+                session_id,
+                level,
+                summarize_fraction,
+            } => {
+                assert_eq!(session_id, "s-1");
+                assert_eq!(level, "emergency");
+                assert!((summarize_fraction - 0.0).abs() < f64::EPSILON);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_action_below_threshold() {
+        let event_bus = Arc::new(EventBus::new(16));
+        let service = LictorService::new(Arc::clone(&event_bus));
+
+        // 50% usage → no action.
+        service.update_token_count("s-1", 100_000);
+
+        let action = service.determine_action("s-1");
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn compaction_level_display() {
+        assert_eq!(CompactionLevel::None.as_str(), "none");
+        assert_eq!(CompactionLevel::Background.as_str(), "background");
+        assert_eq!(CompactionLevel::Aggressive.as_str(), "aggressive");
+        assert_eq!(CompactionLevel::Emergency.as_str(), "emergency");
+        assert_eq!(format!("{}", CompactionLevel::Background), "background");
     }
 }

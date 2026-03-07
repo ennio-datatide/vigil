@@ -62,6 +62,15 @@ pub enum AppEvent {
 
     /// The acta (session summaries) were refreshed.
     ActaRefreshed { project_path: String },
+
+    /// A context compaction was requested by the Lictor.
+    CompactionRequested {
+        session_id: String,
+        /// "background", "aggressive", or "emergency"
+        level: String,
+        /// Fraction of content to summarize (0.0 for emergency/truncation).
+        summarize_fraction: f64,
+    },
 }
 
 /// Broadcast-based event bus for internal pub/sub.
