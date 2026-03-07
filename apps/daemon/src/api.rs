@@ -6,6 +6,7 @@
 pub(crate) mod events;
 pub(crate) mod filesystem;
 pub mod health;
+pub(crate) mod memory;
 pub mod middleware;
 pub(crate) mod notifications;
 pub(crate) mod pipelines;
@@ -50,6 +51,10 @@ pub fn router(deps: AppDeps) -> Router {
             get(settings::get_telegram).put(settings::put_telegram),
         )
         .route("/settings/telegram/test", post(settings::test_telegram))
+        .route("/memory", get(memory::list_memories))
+        .route("/memory", post(memory::create_memory))
+        .route("/memory/search", post(memory::search_memories))
+        .route("/memory/{id}", delete(memory::delete_memory))
         .route("/fs/dirs", get(filesystem::list_dirs))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
