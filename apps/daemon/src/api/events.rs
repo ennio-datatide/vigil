@@ -115,6 +115,10 @@ mod tests {
             config: Arc::new(crate::config::Config::for_testing(dir.path())),
             db: db.clone(),
             event_bus,
+            pty_manager: Arc::new(crate::process::pty_manager::PtyManager::new()),
+            output_manager: Arc::new(crate::process::output_manager::OutputManager::new(
+                dir.path().join("logs"),
+            )),
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
         };
