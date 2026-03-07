@@ -9,6 +9,7 @@ pub mod middleware;
 pub(crate) mod notifications;
 pub(crate) mod projects;
 pub(crate) mod sessions;
+pub(crate) mod skills;
 
 use axum::routing::{delete, get, patch, post};
 use axum::Router;
@@ -33,6 +34,7 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/notifications/test", post(notifications::test_notification))
         .route("/notifications/read-all", patch(notifications::read_all))
         .route("/notifications/{id}/read", patch(notifications::mark_read))
+        .route("/skills", get(skills::list_skills))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
