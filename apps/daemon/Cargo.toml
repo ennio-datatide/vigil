@@ -1,0 +1,77 @@
+[package]
+name = "praefectus-daemon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "Praefectus daemon — AI session orchestrator"
+license = "MIT"
+
+[[bin]]
+name = "praefectus"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.44", features = ["full"] }
+futures = "0.3"
+
+# HTTP / WebSocket
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+
+# HTTP client
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
+
+# Vector / embedding
+lancedb = "0.26"
+fastembed = "4"
+redb = "2.4"
+
+# LLM
+rig-core = { version = "0.31", features = ["derive"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Templating
+minijinja = "2.8"
+
+# Common types
+uuid = { version = "1.15", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utilities
+arc-swap = "1"
+moka = { version = "0.12", features = ["future"] }
+schemars = "1"
+rustc-hash = "2"
+fs-err = "3"
+dirs = "6.0"
+url = "2"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json", "redactions"] }
+test-case = "3"
+tempfile = "3"
+axum-test = "16"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"
