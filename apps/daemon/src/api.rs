@@ -14,6 +14,7 @@ pub(crate) mod projects;
 pub(crate) mod sessions;
 pub(crate) mod settings;
 pub(crate) mod skills;
+pub(crate) mod sub_sessions;
 pub(crate) mod ws_dashboard;
 pub(crate) mod ws_terminal;
 
@@ -33,6 +34,11 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/sessions/{id}/remove", delete(sessions::remove_session))
         .route("/sessions/{id}/restart", post(sessions::restart_session))
         .route("/sessions/{id}/resume", post(sessions::resume_session))
+        .route(
+            "/sessions/{id}/children",
+            get(sub_sessions::list_children),
+        )
+        .route("/sessions/{id}/spawn", post(sub_sessions::spawn_child))
         .route("/projects", get(projects::list_projects))
         .route("/projects", post(projects::create_project))
         .route("/projects/{path}", delete(projects::delete_project))
