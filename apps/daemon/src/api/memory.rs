@@ -10,8 +10,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::deps::AppDeps;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::services::memory_store::CreateMemoryInput;
+
+/// Maximum number of search results a client can request.
+const MAX_SEARCH_LIMIT: usize = 100;
 
 /// Query parameters for the list endpoint.
 #[derive(Debug, Deserialize)]
@@ -47,7 +50,10 @@ pub(crate) async fn search_memories(
     State(deps): State<AppDeps>,
     Json(input): Json<SearchInput>,
 ) -> Result<impl IntoResponse> {
-    let limit = input.limit.unwrap_or(10);
+    if input.query.trim().is_empty() {
+        return Err(Error::BadRequest("query must not be empty".into()));
+    }
+    let limit = input.limit.unwrap_or(10).min(MAX_SEARCH_LIMIT);
     let results = deps
         .memory_search
         .search(&input.query, input.project_path.as_deref(), limit)
@@ -60,6 +66,9 @@ pub(crate) async fn create_memory(
     State(deps): State<AppDeps>,
     Json(input): Json<CreateMemoryInput>,
 ) -> Result<impl IntoResponse> {
+    if input.content.trim().is_empty() {
+        return Err(Error::BadRequest("content must not be empty".into()));
+    }
     let memory = deps.memory_store.create(&input).await?;
     Ok((StatusCode::CREATED, Json(memory)))
 }
