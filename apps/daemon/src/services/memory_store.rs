@@ -311,7 +311,7 @@ impl MemoryStore {
 // ---------------------------------------------------------------------------
 
 /// Map a raw `SqliteRow` to a [`Memory`] domain model.
-fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Memory {
+pub(crate) fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Memory {
     let memory_type = parse_memory_type(row.get::<String, _>("memory_type").as_str());
 
     Memory {
@@ -356,7 +356,7 @@ fn memory_type_to_str(t: &MemoryType) -> &'static str {
     }
 }
 
-fn parse_memory_type(s: &str) -> MemoryType {
+pub(crate) fn parse_memory_type(s: &str) -> MemoryType {
     match s {
         "decision" => MemoryType::Decision,
         "preference" => MemoryType::Preference,

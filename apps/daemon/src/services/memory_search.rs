@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Serialize;
-use sqlx::Row;
 use tracing::debug;
 
 use crate::db::lance::{LanceDb, SearchResult};
@@ -141,30 +140,55 @@ impl MemorySearch {
         self.enrich(ranked, limit).await
     }
 
-    /// Look up each ranked id in `SQLite` to get the full [`Memory`] record.
+    /// Look up ranked ids in `SQLite` to get full [`Memory`] records.
+    ///
+    /// Uses a single batched query to avoid N+1 round trips.
     async fn enrich(
         &self,
         ranked: Vec<(String, f64)>,
         limit: usize,
     ) -> Result<Vec<MemorySearchResult>> {
-        let mut results = Vec::with_capacity(limit.min(ranked.len()));
+        let top: Vec<(String, f64)> = ranked.into_iter().take(limit).collect();
+        if top.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        for (id, score) in ranked.into_iter().take(limit) {
-            let row = sqlx::query(
-                "SELECT id, project_path, memory_type, content, source_session_id, \
-                 importance, access_count, created_at, accessed_at \
-                 FROM memories WHERE id = ?",
-            )
-            .bind(&id)
-            .fetch_optional(self.db.pool())
+        // Build a single IN(...) query.
+        let placeholders = top.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, project_path, memory_type, content, source_session_id, \
+             importance, access_count, created_at, accessed_at \
+             FROM memories WHERE id IN ({placeholders})"
+        );
+        let mut query = sqlx::query(&sql);
+        for (id, _) in &top {
+            query = query.bind(id);
+        }
+
+        let rows = query
+            .fetch_all(self.db.pool())
             .await
             .map_err(DbError::from)?;
 
-            if let Some(row) = row {
-                let memory = row_to_memory(&row);
-                results.push(MemorySearchResult { memory, score });
-            }
-        }
+        // Build a map of id → Memory for fast lookup.
+        let memory_map: HashMap<String, Memory> = rows
+            .iter()
+            .map(|row| {
+                let mem = row_to_memory(row);
+                (mem.id.clone(), mem)
+            })
+            .collect();
+
+        // Reconstruct results in RRF score order.
+        let results = top
+            .into_iter()
+            .filter_map(|(id, score)| {
+                memory_map.get(&id).map(|memory| MemorySearchResult {
+                    memory: memory.clone(),
+                    score,
+                })
+            })
+            .collect();
 
         Ok(results)
     }
@@ -212,35 +236,7 @@ fn filter_by_project<'a>(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row mapping (duplicated from memory_store to avoid coupling)
-// ---------------------------------------------------------------------------
-
-/// Map a raw `SqliteRow` to a [`Memory`] domain model.
-fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Memory {
-    use crate::db::models::MemoryType;
-
-    let memory_type = match row.get::<String, _>("memory_type").as_str() {
-        "decision" => MemoryType::Decision,
-        "preference" => MemoryType::Preference,
-        "pattern" => MemoryType::Pattern,
-        "failure" => MemoryType::Failure,
-        "todo" => MemoryType::Todo,
-        _ => MemoryType::Fact,
-    };
-
-    Memory {
-        id: row.get("id"),
-        project_path: row.get("project_path"),
-        content: row.get("content"),
-        memory_type,
-        source_session_id: row.get("source_session_id"),
-        importance: row.get("importance"),
-        access_count: row.get("access_count"),
-        created_at: row.get("created_at"),
-        accessed_at: row.get("accessed_at"),
-    }
-}
+use crate::services::memory_store::row_to_memory;
 
 // ---------------------------------------------------------------------------
 // Tests
