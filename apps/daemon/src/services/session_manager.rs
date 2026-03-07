@@ -224,6 +224,7 @@ impl SessionManager {
             skill: next.skill.clone(),
             role: None,
             parent_id: Some(session_id.to_string()),
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: Some(pipeline_id.clone()),
         };
@@ -272,6 +273,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         }
@@ -468,6 +470,7 @@ mod tests {
             skill: Some("coding".into()),
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: Some(pipeline.id.clone()),
         };
@@ -540,6 +543,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: Some(pipeline.id.clone()),
         };
