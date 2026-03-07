@@ -18,6 +18,7 @@ use crate::process::pty_manager::PtyManager;
 use crate::services::memory_search::MemorySearch;
 use crate::services::memory_store::MemoryStore;
 use crate::services::sub_session::SubSessionService;
+use crate::services::vigil::VigilService;
 
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone)]
@@ -40,6 +41,8 @@ pub struct AppDeps {
     pub sub_session_service: SubSessionService,
     /// Key-value store (redb).
     pub kv: KvStore,
+    /// Vigil (per-project overseer) service.
+    pub vigil_service: Arc<VigilService>,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -57,6 +60,7 @@ impl std::fmt::Debug for AppDeps {
             .field("memory_search", &"MemorySearch { .. }")
             .field("sub_session_service", &"SubSessionService { .. }")
             .field("kv", &"KvStore { .. }")
+            .field("vigil_service", &"VigilService { .. }")
             .finish()
     }
 }
@@ -86,6 +90,14 @@ impl AppDeps {
         let memory_search = MemorySearch::new(Arc::clone(&db), lance.clone());
         let sub_session_service =
             SubSessionService::new(Arc::clone(&db), Arc::clone(&event_bus));
+        let vigil_service = Arc::new(VigilService::new(
+            Arc::clone(&event_bus),
+            Arc::clone(&db),
+            memory_store.clone(),
+            memory_search.clone(),
+            kv.clone(),
+            sub_session_service.clone(),
+        ));
 
         Ok(Self {
             config: Arc::new(config),
@@ -100,6 +112,7 @@ impl AppDeps {
             memory_search,
             sub_session_service,
             kv,
+            vigil_service,
         })
     }
 }
