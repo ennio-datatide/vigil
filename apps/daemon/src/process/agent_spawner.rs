@@ -319,6 +319,56 @@ impl AgentSpawner {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Status block generation
+// ---------------------------------------------------------------------------
+
+/// Generate a status block showing active children of a parent session.
+///
+/// Returns `None` if the parent has no non-terminal children.
+#[allow(dead_code)] // Called by sub-session orchestration (Task 3.4+).
+pub(crate) async fn generate_children_status_block(
+    db: &SqliteDb,
+    parent_id: &str,
+) -> anyhow::Result<Option<String>> {
+    use sqlx::Row;
+
+    let rows = sqlx::query(
+        "SELECT id, spawn_type, status, prompt FROM sessions \
+         WHERE parent_id = ? AND status NOT IN ('completed', 'failed', 'cancelled', 'interrupted') \
+         ORDER BY rowid ASC",
+    )
+    .bind(parent_id)
+    .fetch_all(db.pool())
+    .await?;
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let mut lines = vec![format!("Active Children ({}):", rows.len())];
+    for row in &rows {
+        let id: String = row.get("id");
+        let spawn_type: Option<String> = row.get("spawn_type");
+        let status: String = row.get("status");
+        let prompt: String = row.get("prompt");
+
+        let short_id = &id[..id.len().min(8)];
+        let type_label = spawn_type.as_deref().unwrap_or("child");
+        let short_prompt = if prompt.len() > 50 {
+            format!("{}...", &prompt[..47])
+        } else {
+            prompt
+        };
+
+        lines.push(format!(
+            "  [{type_label}] {short_id} — {status} — \"{short_prompt}\""
+        ));
+    }
+
+    Ok(Some(lines.join("\n")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +393,158 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let meta = AgentSpawner::capture_git_metadata(dir.path().to_str().unwrap());
         assert!(meta.is_none(), "non-git directory should return None");
+    }
+
+    // -----------------------------------------------------------------------
+    // Status block tests
+    // -----------------------------------------------------------------------
+
+    use crate::db::models::{SessionStatus, SpawnType};
+    use crate::services::session_store::{CreateSessionInput, SessionStore};
+    use std::sync::Arc;
+
+    /// Create an isolated test database with migrations applied.
+    async fn test_db() -> (Arc<SqliteDb>, tempfile::TempDir) {
+        let dir = tempfile::TempDir::new().expect("failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let db = SqliteDb::connect(&db_path)
+            .await
+            .expect("failed to connect to test db");
+        (Arc::new(db), dir)
+    }
+
+    /// Helper: insert a session directly.
+    async fn insert_session(
+        db: &Arc<SqliteDb>,
+        id: &str,
+        prompt: &str,
+        parent_id: Option<&str>,
+        spawn_type: Option<SpawnType>,
+        status: SessionStatus,
+    ) {
+        let store = SessionStore::new(Arc::clone(db));
+        let input = CreateSessionInput {
+            project_path: "/tmp/test-project".into(),
+            prompt: prompt.into(),
+            skill: None,
+            role: None,
+            parent_id: parent_id.map(String::from),
+            spawn_type,
+            skip_permissions: None,
+            pipeline_id: None,
+        };
+        store.create(id, &input).await.unwrap();
+        if status != SessionStatus::Queued {
+            store.update_status(id, status, None, None).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn status_block_with_active_children() {
+        let (db, _dir) = test_db().await;
+
+        // Create parent.
+        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+
+        // Create two active children.
+        insert_session(
+            &db,
+            "abc12345-full-id",
+            "Research memory patterns and find best approach",
+            Some("parent-1"),
+            Some(SpawnType::Branch),
+            SessionStatus::Queued,
+        )
+        .await;
+        insert_session(
+            &db,
+            "def67890-full-id",
+            "Implement the cache layer for the system",
+            Some("parent-1"),
+            Some(SpawnType::Worker),
+            SessionStatus::Running,
+        )
+        .await;
+
+        let block = generate_children_status_block(&db, "parent-1")
+            .await
+            .unwrap();
+        assert!(block.is_some(), "should generate a status block");
+
+        let text = block.unwrap();
+        assert!(text.contains("Active Children (2):"), "should show count of 2");
+        assert!(text.contains("[branch]"), "should show branch type");
+        assert!(text.contains("[worker]"), "should show worker type");
+        assert!(text.contains("abc12345"), "should show truncated id");
+        assert!(text.contains("def67890"), "should show truncated id");
+        assert!(text.contains("queued"), "should show queued status");
+        assert!(text.contains("running"), "should show running status");
+    }
+
+    #[tokio::test]
+    async fn status_block_no_active_children() {
+        let (db, _dir) = test_db().await;
+
+        // Create parent.
+        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+
+        // Create a completed child — should be excluded.
+        insert_session(
+            &db,
+            "child-done",
+            "finished work",
+            Some("parent-1"),
+            Some(SpawnType::Branch),
+            SessionStatus::Completed,
+        )
+        .await;
+
+        let block = generate_children_status_block(&db, "parent-1")
+            .await
+            .unwrap();
+        assert!(block.is_none(), "should return None when all children are terminal");
+    }
+
+    #[tokio::test]
+    async fn status_block_no_children() {
+        let (db, _dir) = test_db().await;
+
+        // Create parent with no children at all.
+        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+
+        let block = generate_children_status_block(&db, "parent-1")
+            .await
+            .unwrap();
+        assert!(block.is_none(), "should return None when no children exist");
+    }
+
+    #[tokio::test]
+    async fn status_block_truncates_long_prompts() {
+        let (db, _dir) = test_db().await;
+
+        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+
+        let long_prompt = "A".repeat(100);
+        insert_session(
+            &db,
+            "child-long",
+            &long_prompt,
+            Some("parent-1"),
+            Some(SpawnType::Worker),
+            SessionStatus::Running,
+        )
+        .await;
+
+        let block = generate_children_status_block(&db, "parent-1")
+            .await
+            .unwrap();
+        let text = block.unwrap();
+
+        // Truncated prompt should be 47 chars + "..." = 50 chars total.
+        assert!(text.contains("..."), "should truncate long prompts with ellipsis");
+        assert!(
+            !text.contains(&"A".repeat(100)),
+            "should not contain the full 100-char prompt"
+        );
     }
 }
