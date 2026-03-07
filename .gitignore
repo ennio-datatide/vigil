@@ -11,3 +11,4 @@ dist/
 docs/plans/
 test-results/
 *.tsbuildinfo
+target/
