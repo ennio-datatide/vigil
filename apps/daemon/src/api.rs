@@ -6,10 +6,11 @@
 pub(crate) mod events;
 pub mod health;
 pub mod middleware;
+pub(crate) mod notifications;
 pub(crate) mod projects;
 pub(crate) mod sessions;
 
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
 
@@ -28,6 +29,10 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/projects", get(projects::list_projects))
         .route("/projects", post(projects::create_project))
         .route("/projects/{path}", delete(projects::delete_project))
+        .route("/notifications", get(notifications::list_notifications))
+        .route("/notifications/test", post(notifications::test_notification))
+        .route("/notifications/read-all", patch(notifications::read_all))
+        .route("/notifications/{id}/read", patch(notifications::mark_read))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
