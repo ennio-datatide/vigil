@@ -129,7 +129,8 @@ impl MemoryDecayService {
             let decay_rate = decay_rate_for(&memory.memory_type);
             #[allow(clippy::cast_precision_loss)]
             let boost = (1.0 + memory.access_count as f64).log2() * 0.01;
-            let new_importance = (memory.importance - decay_rate * hours_since_access + boost).max(0.0);
+            let new_importance =
+                (memory.importance - decay_rate * hours_since_access + boost).clamp(0.0, 1.0);
 
             if new_importance < PRUNE_THRESHOLD {
                 self.delete_memory(&memory.id).await?;
