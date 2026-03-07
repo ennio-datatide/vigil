@@ -212,6 +212,7 @@ pub(crate) async fn resume_session(
         skill: None,
         role: None,
         parent_id: Some(id.clone()),
+        spawn_type: None,
         skip_permissions: None,
         pipeline_id: None,
     };

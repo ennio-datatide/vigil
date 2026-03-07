@@ -24,6 +24,7 @@ pub struct CreateSessionInput {
     pub skill: Option<String>,
     pub role: Option<SessionRole>,
     pub parent_id: Option<String>,
+    pub spawn_type: Option<SpawnType>,
     pub skip_permissions: Option<bool>,
     pub pipeline_id: Option<String>,
 }
@@ -92,11 +93,12 @@ impl SessionStore {
             .map(|s| serde_json::to_string(&vec![s]).expect("vec serialization cannot fail"));
 
         let role_text: Option<&str> = input.role.as_ref().map(role_to_str);
+        let spawn_type_text: Option<&str> = input.spawn_type.as_ref().map(spawn_type_to_str);
 
         sqlx::query(
             "INSERT INTO sessions (id, project_path, prompt, skills_used, status, agent_type, \
-             role, parent_id, retry_count, pipeline_id) \
-             VALUES (?, ?, ?, ?, 'queued', 'claude', ?, ?, 0, ?)",
+             role, parent_id, spawn_type, retry_count, pipeline_id) \
+             VALUES (?, ?, ?, ?, 'queued', 'claude', ?, ?, ?, 0, ?)",
         )
         .bind(id)
         .bind(&input.project_path)
@@ -104,6 +106,7 @@ impl SessionStore {
         .bind(&skills_used_json)
         .bind(role_text)
         .bind(&input.parent_id)
+        .bind(spawn_type_text)
         .bind(&input.pipeline_id)
         .execute(self.db.pool())
         .await
@@ -263,7 +266,7 @@ impl SessionStore {
 // ---------------------------------------------------------------------------
 
 /// Map a raw `sqlx::sqlite::SqliteRow` to a [`Session`] domain model.
-fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
+pub(crate) fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
     let skills_used: Option<Vec<String>> = row
         .get::<Option<String>, _>("skills_used")
         .map(|s| serde_json::from_str(&s))
@@ -391,6 +394,13 @@ fn parse_spawn_type(s: &str) -> SpawnType {
     }
 }
 
+fn spawn_type_to_str(t: &SpawnType) -> &'static str {
+    match t {
+        SpawnType::Branch => "branch",
+        SpawnType::Worker => "worker",
+    }
+}
+
 /// Check whether a status represents a terminal (finished) state.
 pub(crate) fn is_terminal_status(status: &SessionStatus) -> bool {
     matches!(
@@ -433,6 +443,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         }
@@ -569,6 +580,7 @@ mod tests {
             skill: None,
             role: Some(SessionRole::Reviewer),
             parent_id: Some("parent-123".into()),
+            spawn_type: None,
             skip_permissions: Some(true),
             pipeline_id: Some("pipe-1".into()),
         };

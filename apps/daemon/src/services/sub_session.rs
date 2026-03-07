@@ -9,15 +9,12 @@
 use std::sync::Arc;
 
 use serde::Deserialize;
-use sqlx::Row;
 
-use crate::db::models::{
-    AgentType, ExitReason, GitMetadata, Session, SessionRole, SessionStatus, SpawnType,
-};
+use crate::db::models::{Session, SessionStatus, SpawnType};
 use crate::db::sqlite::SqliteDb;
 use crate::error::{DbError, Result};
 use crate::events::{AppEvent, EventBus};
-use crate::services::session_store::{CreateSessionInput, SessionStore};
+use crate::services::session_store::{row_to_session, CreateSessionInput, SessionStore};
 
 /// Maximum number of concurrent branch children per parent session.
 const MAX_BRANCHES: usize = 3;
@@ -114,7 +111,7 @@ impl SubSessionService {
             )));
         }
 
-        // 4. Create child session.
+        // 4. Create child session with spawn_type.
         let child_id = uuid::Uuid::new_v4().to_string();
         let create_input = CreateSessionInput {
             project_path: parent.project_path.clone(),
@@ -122,31 +119,14 @@ impl SubSessionService {
             skill: input.skill.clone(),
             role: None,
             parent_id: Some(parent_id.to_owned()),
+            spawn_type: Some(input.spawn_type.clone()),
             skip_permissions: None,
             pipeline_id: None,
         };
 
-        let _child = store.create(&child_id, &create_input).await?;
+        let child = store.create(&child_id, &create_input).await?;
 
-        // 5. Set spawn_type on the child (SessionStore::create doesn't handle it).
-        let spawn_type_str = match input.spawn_type {
-            SpawnType::Branch => "branch",
-            SpawnType::Worker => "worker",
-        };
-        sqlx::query("UPDATE sessions SET spawn_type = ? WHERE id = ?")
-            .bind(spawn_type_str)
-            .bind(&child_id)
-            .execute(self.db.pool())
-            .await
-            .map_err(DbError::from)?;
-
-        // Re-fetch to get the updated record.
-        let child = store
-            .get(&child_id)
-            .await?
-            .ok_or_else(|| crate::error::Error::NotFound(format!("session {child_id}")))?;
-
-        // 6. Emit event.
+        // 5. Emit event.
         let _ = self.event_bus.emit(AppEvent::ChildSpawned {
             parent_id: parent_id.to_owned(),
             child_id: child_id.clone(),
@@ -263,102 +243,6 @@ fn spawn_type_label(t: &SpawnType) -> &'static str {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row mapping (mirrors session_store but scoped to this module)
-// ---------------------------------------------------------------------------
-
-fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
-    let skills_used: Option<Vec<String>> = row
-        .get::<Option<String>, _>("skills_used")
-        .map(|s| serde_json::from_str(&s))
-        .transpose()
-        .map_err(DbError::from)?;
-
-    let git_metadata: Option<GitMetadata> = row
-        .get::<Option<String>, _>("git_metadata")
-        .map(|s| serde_json::from_str(&s))
-        .transpose()
-        .map_err(DbError::from)?;
-
-    let status = parse_status(row.get::<String, _>("status").as_str());
-    let agent_type = parse_agent_type(row.get::<String, _>("agent_type").as_str());
-    let role: Option<SessionRole> = row
-        .get::<Option<String>, _>("role")
-        .map(|s| parse_role(&s));
-    let exit_reason: Option<ExitReason> = row
-        .get::<Option<String>, _>("exit_reason")
-        .map(|s| parse_exit_reason(&s));
-    let spawn_type: Option<SpawnType> = row
-        .get::<Option<String>, _>("spawn_type")
-        .map(|s| parse_spawn_type(&s));
-
-    Ok(Session {
-        id: row.get("id"),
-        project_path: row.get("project_path"),
-        worktree_path: row.get("worktree_path"),
-        tmux_session: row.get("tmux_session"),
-        prompt: row.get("prompt"),
-        skills_used,
-        status,
-        agent_type,
-        role,
-        parent_id: row.get("parent_id"),
-        spawn_type,
-        spawn_result: row.get("spawn_result"),
-        retry_count: row.get("retry_count"),
-        started_at: row.get("started_at"),
-        ended_at: row.get("ended_at"),
-        exit_reason,
-        git_metadata,
-        pipeline_id: row.get("pipeline_id"),
-        pipeline_step_index: row.get("pipeline_step_index"),
-    })
-}
-
-fn parse_status(s: &str) -> SessionStatus {
-    match s {
-        "queued" => SessionStatus::Queued,
-        "running" => SessionStatus::Running,
-        "needs_input" => SessionStatus::NeedsInput,
-        "auth_required" => SessionStatus::AuthRequired,
-        "completed" => SessionStatus::Completed,
-        "cancelled" => SessionStatus::Cancelled,
-        "interrupted" => SessionStatus::Interrupted,
-        _ => SessionStatus::Failed,
-    }
-}
-
-fn parse_agent_type(s: &str) -> AgentType {
-    match s {
-        "codex" => AgentType::Codex,
-        _ => AgentType::Claude,
-    }
-}
-
-fn parse_role(s: &str) -> SessionRole {
-    match s {
-        "implementer" => SessionRole::Implementer,
-        "reviewer" => SessionRole::Reviewer,
-        "fixer" => SessionRole::Fixer,
-        _ => SessionRole::Custom,
-    }
-}
-
-fn parse_exit_reason(s: &str) -> ExitReason {
-    match s {
-        "completed" => ExitReason::Completed,
-        "user_cancelled" => ExitReason::UserCancelled,
-        "chain_triggered" => ExitReason::ChainTriggered,
-        _ => ExitReason::Error,
-    }
-}
-
-fn parse_spawn_type(s: &str) -> SpawnType {
-    match s {
-        "branch" => SpawnType::Branch,
-        _ => SpawnType::Worker,
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -367,6 +251,7 @@ fn parse_spawn_type(s: &str) -> SpawnType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::ExitReason;
     use crate::db::sqlite::SqliteDb;
     use crate::events::EventBus;
     use tempfile::TempDir;
@@ -396,6 +281,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         };
@@ -415,6 +301,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         };

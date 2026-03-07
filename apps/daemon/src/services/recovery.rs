@@ -97,6 +97,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         }
