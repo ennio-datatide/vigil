@@ -4,6 +4,7 @@
 //! and other domain services.
 
 pub(crate) mod notification_store;
+pub(crate) mod notifier;
 pub(crate) mod pipeline_store;
 pub(crate) mod project_store;
 pub(crate) mod session_manager;
