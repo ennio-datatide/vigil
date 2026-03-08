@@ -68,7 +68,7 @@ impl VigilService {
     }
 
     /// Start the Vigil event processing loop.
-    pub(crate) fn start(self) -> tokio::task::JoinHandle<()> {
+    pub(crate) fn start(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         let mut rx = self.event_bus.subscribe();
 
         tokio::spawn(async move {

@@ -4,8 +4,12 @@
 //! global overseer, retrieving a project acta (briefing), and browsing
 //! chat history.
 
+use std::fmt::Write as _;
+
 use axum::extract::{Json, Query, State};
 use axum::response::IntoResponse;
+use rig::client::completion::CompletionClient as _;
+use rig::completion::Prompt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -75,8 +79,71 @@ pub(crate) async fn chat(
         deps.vigil_service.ensure_vigil(pp).await;
     }
 
-    // Placeholder response — actual LLM integration deferred.
-    let response = "I received your message. (Vigil LLM integration pending)".to_owned();
+    let response = if let Some(ref client) = deps.anthropic_client {
+        // Determine project context for system prompt.
+        let project_path = input.project_path.as_deref().unwrap_or("global");
+        let system_prompt = crate::llm::vigil::render_system_prompt(project_path);
+
+        // Load recent chat history for context.
+        let history = deps
+            .vigil_chat_store
+            .list_messages(20, 0)
+            .await
+            .unwrap_or_default();
+
+        // Build the conversation context from history.
+        let mut context = String::new();
+        for msg in &history {
+            let role = if msg.role == "user" { "Human" } else { "Vigil" };
+            let _ = write!(context, "{role}: {}\n\n", msg.content);
+        }
+
+        // Build rig-core agent with Vigil tools.
+        let vigil_deps = deps.vigil_service.vigil_deps();
+        let agent = client
+            .agent(rig::providers::anthropic::completion::CLAUDE_4_SONNET)
+            .preamble(&system_prompt)
+            .max_tokens(4096)
+            .temperature(0.3)
+            .tool(crate::llm::vigil::MemoryRecallTool::new(
+                vigil_deps.memory_search.clone(),
+            ))
+            .tool(crate::llm::vigil::MemorySaveTool::new(
+                vigil_deps.memory_store.clone(),
+            ))
+            .tool(crate::llm::vigil::MemoryDeleteTool::new(
+                vigil_deps.memory_store.clone(),
+            ))
+            .tool(crate::llm::vigil::SessionRecallTool::new(
+                std::sync::Arc::clone(&vigil_deps.db),
+            ))
+            .tool(crate::llm::vigil::ActaUpdateTool::new(
+                vigil_deps.kv.clone(),
+            ))
+            .tool(crate::llm::vigil::SpawnWorkerTool::new(
+                std::sync::Arc::clone(&vigil_deps.db),
+                vigil_deps.sub_session.clone(),
+            ))
+            .default_max_turns(10)
+            .build();
+
+        // Prompt the agent with conversation context + new message.
+        let prompt = if context.is_empty() {
+            input.message.clone()
+        } else {
+            format!("<conversation_history>\n{context}</conversation_history>\n\n{}", input.message)
+        };
+
+        match agent.prompt(&prompt).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::error!(error = %e, "vigil llm call failed");
+                format!("Vigil encountered an error: {e}")
+            }
+        }
+    } else {
+        "Vigil LLM is not configured. Set the ANTHROPIC_API_KEY environment variable.".to_owned()
+    };
 
     // Save vigil response.
     deps.vigil_chat_store
@@ -198,8 +265,8 @@ mod tests {
             json["response"]
                 .as_str()
                 .unwrap()
-                .contains("LLM integration pending"),
-            "should return placeholder response"
+                .contains("ANTHROPIC_API_KEY"),
+            "should indicate missing API key when not configured"
         );
     }
 
@@ -239,8 +306,8 @@ mod tests {
 
         let json = json_body(resp).await;
         assert!(
-            json["response"].as_str().unwrap().contains("LLM integration pending"),
-            "should return placeholder response without project_path"
+            json["response"].as_str().unwrap().contains("ANTHROPIC_API_KEY"),
+            "should indicate missing API key without project_path"
         );
     }
 
