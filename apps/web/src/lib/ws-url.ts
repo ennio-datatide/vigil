@@ -4,7 +4,7 @@ import { getToken } from './auth-token';
  * Build a WebSocket URL that connects directly to the backend.
  *
  * Next.js rewrites only proxy HTTP — WebSocket upgrade requests
- * are NOT forwarded, so we connect to the Fastify server directly.
+ * are NOT forwarded, so we connect to the Rust daemon directly.
  */
 export function wsUrl(path: string): string {
   if (typeof window === 'undefined') return '';
