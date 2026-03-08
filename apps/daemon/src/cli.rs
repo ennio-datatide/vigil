@@ -46,6 +46,12 @@ pub enum Command {
     Status,
     /// Clean up stale sessions and worktrees.
     Cleanup,
+    /// Run the Vigil MCP server (stdio transport).
+    McpServe {
+        /// URL of the running daemon.
+        #[arg(long, default_value = "http://localhost:8000")]
+        daemon_url: String,
+    },
 }
 
 /// Execute the `daemon` subcommand — starts the server.

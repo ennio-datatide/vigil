@@ -19,5 +19,6 @@ async fn main() -> anyhow::Result<()> {
         Command::Ls { all } => praefectus_daemon::cli::cmd_ls(all).await,
         Command::Status => praefectus_daemon::cli::cmd_status().await,
         Command::Cleanup => praefectus_daemon::cli::cmd_cleanup().await,
+        Command::McpServe { daemon_url } => praefectus_daemon::mcp::run_mcp_server(daemon_url).await,
     }
 }
