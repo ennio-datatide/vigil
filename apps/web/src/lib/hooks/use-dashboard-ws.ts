@@ -1,8 +1,9 @@
 'use client';
 import { useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSessionsQuery } from '../api';
 import { useSessionStore } from '../stores/session-store';
-import type { WsMessage } from '../types';
+import type { WsMessageExtended } from '../types';
 import { wsUrl } from '../ws-url';
 
 export function useDashboardWs() {
@@ -11,6 +12,7 @@ export function useDashboardWs() {
   const reconnectAttemptRef = useRef(0);
   const unmountedRef = useRef(false);
   const { setSession, removeSession, syncAll } = useSessionStore();
+  const queryClient = useQueryClient();
 
   // REST: always fetch fresh sessions on mount so dashboard is never stale
   const { data: restSessions } = useSessionsQuery();
@@ -28,7 +30,7 @@ export function useDashboardWs() {
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
-      const msg: WsMessage = JSON.parse(event.data);
+      const msg: WsMessageExtended = JSON.parse(event.data);
       switch (msg.type) {
         case 'state_sync':
           syncAll(msg.sessions);
@@ -38,6 +40,21 @@ export function useDashboardWs() {
           break;
         case 'session_removed':
           removeSession(msg.sessionId);
+          break;
+        case 'child_spawned':
+        case 'child_completed':
+          // Refresh sessions to pick up parent/child state changes
+          queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          break;
+        case 'status_changed':
+          // Session status changed — sessions will be updated via session_update
+          // This event is useful for triggering blocker UI in Vigil chat
+          break;
+        case 'memory_updated':
+          queryClient.invalidateQueries({ queryKey: ['memory'] });
+          break;
+        case 'acta_refreshed':
+          queryClient.invalidateQueries({ queryKey: ['vigil-status'] });
           break;
       }
     };
@@ -56,7 +73,7 @@ export function useDashboardWs() {
     ws.onerror = () => {
       ws.close();
     };
-  }, [setSession, removeSession, syncAll]);
+  }, [setSession, removeSession, syncAll, queryClient]);
 
   useEffect(() => {
     unmountedRef.current = false;
