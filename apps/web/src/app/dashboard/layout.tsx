@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { NewSession } from '@/components/dashboard/new-session';
 import { NotificationBell } from '@/components/dashboard/notification-bell';
 import { PraefectusLogo } from '@/components/ui/praefectus-logo';
 import { ToastContainer } from '@/components/ui/toast';
@@ -12,7 +11,7 @@ import { ToastContainer } from '@/components/ui/toast';
 const NAV_ITEMS = [
   {
     href: '/dashboard',
-    label: 'Dashboard',
+    label: 'Vigil',
     icon: (
       <svg
         width="20"
@@ -24,10 +23,7 @@ const NAV_ITEMS = [
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
     ),
     match: 'exact' as const,
@@ -242,7 +238,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       )}
 
-      <NewSession />
       <ToastContainer />
     </div>
   );
