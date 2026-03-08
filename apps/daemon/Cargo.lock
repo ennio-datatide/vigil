@@ -5368,6 +5368,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "arrow-array",
+ "arrow-schema",
  "axum 0.8.8",
  "axum-test",
  "chrono",
@@ -5378,6 +5380,7 @@ dependencies = [
  "futures",
  "http-body-util",
  "insta",
+ "lance-index",
  "lancedb",
  "minijinja",
  "moka",

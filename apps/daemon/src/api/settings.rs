@@ -130,11 +130,11 @@ mod tests {
         use crate::api;
         use crate::deps::AppDeps;
 
-        async fn test_app() -> axum::Router {
-            let deps = AppDeps::new(crate::config::Config::test_config())
-                .await
-                .expect("failed to create test deps");
-            api::router(deps)
+        async fn test_app() -> (axum::Router, tempfile::TempDir) {
+            let dir = tempfile::TempDir::new().expect("temp dir");
+            let config = crate::config::Config::for_testing(dir.path());
+            let deps = AppDeps::new(config).await.expect("test deps");
+            (api::router(deps), dir)
         }
 
         async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -168,7 +168,7 @@ mod tests {
 
         #[tokio::test]
         async fn get_telegram_not_configured() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
             let resp = app.oneshot(get("/api/settings/telegram")).await.unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
             let body = json_body(resp).await;
@@ -177,7 +177,7 @@ mod tests {
 
         #[tokio::test]
         async fn put_and_get_telegram_with_masking() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
 
             let config = serde_json::json!({
                 "botToken": "bot000000000:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -212,7 +212,7 @@ mod tests {
 
         #[tokio::test]
         async fn put_with_masked_token_preserves_original() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
 
             // Save original config.
             let config = serde_json::json!({
@@ -257,7 +257,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_telegram_not_configured() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
             let resp = app
                 .oneshot(post_empty("/api/settings/telegram/test"))
                 .await
@@ -267,7 +267,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_telegram_disabled() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
 
             let config = serde_json::json!({
                 "botToken": "bot123456:realtoken",
@@ -291,7 +291,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_telegram_enabled_ok() {
-            let app = test_app().await;
+            let (app, _dir) = test_app().await;
 
             let config = serde_json::json!({
                 "botToken": "bot123456:realtoken",

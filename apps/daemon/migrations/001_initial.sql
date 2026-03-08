@@ -83,13 +83,14 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS memories (
     id                TEXT PRIMARY KEY,
-    project_path      TEXT,
+    project_path      TEXT NOT NULL,
     memory_type       TEXT NOT NULL,
     content           TEXT NOT NULL,
     source_session_id TEXT,
-    confidence        REAL NOT NULL DEFAULT 1.0,
+    importance        REAL NOT NULL DEFAULT 0.5,
+    access_count      INTEGER NOT NULL DEFAULT 0,
     created_at        INTEGER NOT NULL,
-    updated_at        INTEGER NOT NULL
+    accessed_at       INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project_path ON memories (project_path);

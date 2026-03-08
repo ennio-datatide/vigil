@@ -22,6 +22,9 @@ pub enum Error {
     #[error("memory error: {0}")]
     Memory(#[from] Box<MemoryError>),
 
+    #[error("kv store error: {0}")]
+    Kv(#[from] Box<KvError>),
+
     #[error("not found: {0}")]
     NotFound(String),
 
@@ -74,6 +77,19 @@ pub enum SessionError {
     SpawnFailed(String),
 }
 
+/// Key-value store errors.
+#[derive(Debug, thiserror::Error)]
+pub enum KvError {
+    #[error("failed to open kv store: {0}")]
+    Open(#[source] redb::DatabaseError),
+
+    #[error("kv read error: {0}")]
+    Read(#[source] anyhow::Error),
+
+    #[error("kv write error: {0}")]
+    Write(#[source] anyhow::Error),
+}
+
 /// Memory subsystem errors.
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryError {
@@ -97,7 +113,11 @@ impl IntoResponse for Error {
             Self::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
-            Self::Config(_) | Self::Db(_) | Self::Memory(_) | Self::Other(_) => {
+            Self::Memory(inner) => match inner.as_ref() {
+                MemoryError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            },
+            Self::Config(_) | Self::Db(_) | Self::Kv(_) | Self::Other(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
             }
         };
@@ -135,5 +155,11 @@ impl From<SessionError> for Error {
 impl From<MemoryError> for Error {
     fn from(error: MemoryError) -> Self {
         Self::Memory(Box::new(error))
+    }
+}
+
+impl From<KvError> for Error {
+    fn from(error: KvError) -> Self {
+        Self::Kv(Box::new(error))
     }
 }

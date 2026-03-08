@@ -11,4 +11,6 @@ dist/
 docs/plans/
 test-results/
 *.tsbuildinfo
-target/
+# Rust
+apps/daemon/target/
+.fastembed_cache/
