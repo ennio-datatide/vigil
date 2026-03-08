@@ -15,6 +15,9 @@ pub(crate) mod services;
 
 mod error;
 
+#[cfg(test)]
+mod e2e;
+
 pub use error::{Error, Result};
 
 use std::net::SocketAddr;
