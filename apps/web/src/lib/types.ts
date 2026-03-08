@@ -15,7 +15,7 @@ export type {
 } from '@praefectus/shared';
 
 // Frontend-specific types
-import type { Session } from '@praefectus/shared';
+import type { Session, WsMessage } from '@praefectus/shared';
 
 export interface SessionStore {
   sessions: Record<string, Session>;
