@@ -803,7 +803,7 @@
     "/api/vigil/chat": {
       "post": {
         "operationId": "vigilChat",
-        "summary": "Chat with a project Vigil",
+        "summary": "Chat with the global Vigil overseer",
         "tags": ["Vigil"],
         "requestBody": {
           "required": true,
@@ -821,10 +821,47 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "response": { "type": "string" },
-                    "projectPath": { "type": "string" }
+                    "response": { "type": "string" }
                   },
-                  "required": ["response", "projectPath"]
+                  "required": ["response"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vigil/history": {
+      "get": {
+        "operationId": "getVigilHistory",
+        "summary": "Get Vigil chat history",
+        "tags": ["Vigil"],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chat message history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["messages"],
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/VigilMessage" }
+                    }
+                  }
                 }
               }
             }
@@ -1209,7 +1246,18 @@
           "projectPath": { "type": "string" },
           "message": { "type": "string" }
         },
-        "required": ["projectPath", "message"]
+        "required": ["message"]
+      },
+      "VigilMessage": {
+        "type": "object",
+        "required": ["id", "role", "content", "createdAt"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "role": { "type": "string", "enum": ["user", "vigil"] },
+          "content": { "type": "string" },
+          "embeddedCards": { "type": ["string", "null"] },
+          "createdAt": { "type": "integer", "format": "int64" }
+        }
       },
       "HookPayload": {
         "type": "object",
