@@ -15,6 +15,9 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli",
+    "build:daemon": "cd apps/daemon && cargo build --release",
+    "test:daemon": "cd apps/daemon && cargo test",
+    "lint:daemon": "cd apps/daemon && cargo clippy -- -D warnings",
     "generate:types": "openapi-typescript apps/daemon/openapi.json -o packages/shared/src/api-types.ts"
   },
   "devDependencies": {
