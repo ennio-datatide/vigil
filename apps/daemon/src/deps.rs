@@ -22,6 +22,9 @@ use crate::services::sub_session::SubSessionService;
 use crate::services::vigil::VigilService;
 use crate::services::vigil_chat::VigilChatStore;
 
+/// Type alias for the rig-core Anthropic client.
+pub type AnthropicClient = rig::providers::anthropic::Client;
+
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone)]
 #[allow(dead_code)] // Fields are used by later tasks.
@@ -49,6 +52,8 @@ pub struct AppDeps {
     pub vigil_chat_store: VigilChatStore,
     /// Blocker escalation timer service.
     pub escalation_service: EscalationService,
+    /// Anthropic LLM client (populated when `ANTHROPIC_API_KEY` is set).
+    pub anthropic_client: Option<AnthropicClient>,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -69,6 +74,7 @@ impl std::fmt::Debug for AppDeps {
             .field("vigil_service", &"VigilService { .. }")
             .field("vigil_chat_store", &"VigilChatStore { .. }")
             .field("escalation_service", &"EscalationService { .. }")
+            .field("anthropic_client", &self.anthropic_client.as_ref().map(|_| "Client { .. }"))
             .finish()
     }
 }
@@ -109,6 +115,19 @@ impl AppDeps {
         ));
         let escalation_service = EscalationService::with_default_timeout(Arc::clone(&event_bus));
 
+        let anthropic_client = std::env::var("ANTHROPIC_API_KEY").ok().and_then(|key| {
+            match AnthropicClient::new(&key) {
+                Ok(client) => {
+                    tracing::info!("anthropic client initialized");
+                    Some(client)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to initialize anthropic client");
+                    None
+                }
+            }
+        });
+
         Ok(Self {
             config: Arc::new(config),
             db,
@@ -125,6 +144,7 @@ impl AppDeps {
             vigil_service,
             vigil_chat_store,
             escalation_service,
+            anthropic_client,
         })
     }
 }

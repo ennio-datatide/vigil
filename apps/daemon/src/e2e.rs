@@ -478,8 +478,8 @@ async fn vigil_lifecycle() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     assert!(
-        body["response"].as_str().unwrap().contains("LLM integration pending"),
-        "should return placeholder response"
+        body["response"].as_str().unwrap().contains("ANTHROPIC_API_KEY"),
+        "should indicate missing API key when not configured"
     );
 
     // -- Step 4: Get vigil status — should show the project as active.

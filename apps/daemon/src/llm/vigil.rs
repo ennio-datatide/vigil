@@ -38,6 +38,12 @@ pub(crate) struct MemoryRecallTool {
     memory_search: MemorySearch,
 }
 
+impl MemoryRecallTool {
+    pub(crate) fn new(memory_search: MemorySearch) -> Self {
+        Self { memory_search }
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct MemoryRecallArgs {
     /// Natural-language search query.
@@ -101,6 +107,12 @@ impl Tool for MemoryRecallTool {
 /// Save a new memory for a project.
 pub(crate) struct MemorySaveTool {
     memory_store: MemoryStore,
+}
+
+impl MemorySaveTool {
+    pub(crate) fn new(memory_store: MemoryStore) -> Self {
+        Self { memory_store }
+    }
 }
 
 #[derive(Deserialize)]
@@ -179,6 +191,12 @@ pub(crate) struct MemoryDeleteTool {
     memory_store: MemoryStore,
 }
 
+impl MemoryDeleteTool {
+    pub(crate) fn new(memory_store: MemoryStore) -> Self {
+        Self { memory_store }
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct MemoryDeleteArgs {
     /// The UUID of the memory to delete.
@@ -226,6 +244,12 @@ impl Tool for MemoryDeleteTool {
 /// Look up session details by ID or list recent sessions for a project.
 pub(crate) struct SessionRecallTool {
     db: Arc<SqliteDb>,
+}
+
+impl SessionRecallTool {
+    pub(crate) fn new(db: Arc<SqliteDb>) -> Self {
+        Self { db }
+    }
 }
 
 #[derive(Deserialize)]
@@ -305,6 +329,12 @@ pub(crate) struct ActaUpdateTool {
     kv: KvStore,
 }
 
+impl ActaUpdateTool {
+    pub(crate) fn new(kv: KvStore) -> Self {
+        Self { kv }
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct ActaUpdateArgs {
     /// Absolute path of the project.
@@ -358,8 +388,19 @@ impl Tool for ActaUpdateTool {
 // ---------------------------------------------------------------------------
 
 /// Spawn a worker session for parallel tasks.
+///
+/// Unlike most spawn tools, Vigil does not have a parent session, so
+/// this tool creates a top-level queued session directly via the
+/// session store rather than going through [`SubSessionService`].
 pub(crate) struct SpawnWorkerTool {
+    db: Arc<SqliteDb>,
     sub_session: SubSessionService,
+}
+
+impl SpawnWorkerTool {
+    pub(crate) fn new(db: Arc<SqliteDb>, sub_session: SubSessionService) -> Self {
+        Self { db, sub_session }
+    }
 }
 
 #[derive(Deserialize)]
@@ -407,18 +448,33 @@ impl Tool for SpawnWorkerTool {
         }
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // Spawning a worker requires a running parent session. Vigil itself
-        // does not have a parent session, so we create the session directly
-        // via the session store rather than using SubSessionService::spawn().
-        //
-        // This will be fully wired in Task 5.2 when the Vigil service
-        // lifecycle is implemented. For now, return an informational stub.
-        Err(VigilToolError(
-            "spawn_worker is not yet wired -- will be implemented in the Vigil \
-             service lifecycle (Task 5.2)"
-                .to_string(),
-        ))
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // Vigil does not have a parent session, so create a top-level
+        // queued session directly via the session store.
+        let store = SessionStore::new(Arc::clone(&self.db));
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        let input = crate::services::session_store::CreateSessionInput {
+            project_path: args.project_path.clone(),
+            prompt: args.prompt.clone(),
+            skill: args.skill,
+            role: None,
+            parent_id: None,
+            spawn_type: None,
+            skip_permissions: None,
+            pipeline_id: None,
+        };
+
+        store
+            .create(&session_id, &input)
+            .await
+            .map_err(|e| VigilToolError(format!("failed to create session: {e}")))?;
+
+        Ok(json!({
+            "session_id": session_id,
+            "project_path": args.project_path,
+            "status": "queued"
+        }))
     }
 }
 
@@ -483,6 +539,7 @@ pub(crate) fn build_vigil_toolset(deps: &VigilDeps) -> rig::tool::ToolSet {
         kv: deps.kv.clone(),
     });
     toolset.add_tool(SpawnWorkerTool {
+        db: Arc::clone(&deps.db),
         sub_session: deps.sub_session.clone(),
     });
 
@@ -631,17 +688,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_worker_returns_stub_error() {
-        let db = crate::db::sqlite::SqliteDb::connect(
-            &std::path::PathBuf::from(":memory:"),
-        )
-        .await
-        .unwrap();
-        let db = Arc::new(db);
-        let event_bus = Arc::new(crate::events::EventBus::new(64));
-        let sub_session = SubSessionService::new(db, event_bus);
+    async fn spawn_worker_creates_session() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let config = crate::config::Config::for_testing(dir.path());
+        config.ensure_dirs().unwrap();
 
-        let tool = SpawnWorkerTool { sub_session };
+        let db = Arc::new(
+            crate::db::sqlite::SqliteDb::connect(&config.db_path)
+                .await
+                .unwrap(),
+        );
+        let event_bus = Arc::new(crate::events::EventBus::new(64));
+        let sub_session = SubSessionService::new(Arc::clone(&db), event_bus);
+
+        let tool = SpawnWorkerTool {
+            db: Arc::clone(&db),
+            sub_session,
+        };
         let args = SpawnWorkerArgs {
             project_path: "/tmp/project".to_string(),
             prompt: "do something".to_string(),
@@ -649,11 +712,18 @@ mod tests {
         };
 
         let result = tool.call(args).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("not yet wired"),
-            "should indicate stub: {err}"
-        );
+        assert!(result.is_ok(), "spawn_worker should succeed: {result:?}");
+        let value = result.unwrap();
+        assert_eq!(value["status"], "queued");
+        assert_eq!(value["project_path"], "/tmp/project");
+        assert!(value["session_id"].is_string(), "should have a session ID");
+
+        // Verify the session was actually created in the database.
+        let store = SessionStore::new(Arc::clone(&db));
+        let session_id = value["session_id"].as_str().unwrap();
+        let session = store.get(session_id).await.unwrap();
+        assert!(session.is_some(), "session should exist in database");
+        let session = session.unwrap();
+        assert_eq!(session.prompt, "do something");
     }
 }

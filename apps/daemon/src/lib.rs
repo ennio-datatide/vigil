@@ -62,6 +62,8 @@ pub async fn run(port: u16) -> Result<()> {
     let memory_decay = services::memory_decay::MemoryDecayService::new(&deps);
     let memory_decay_handle = memory_decay.start();
 
+    let vigil_handle = deps.vigil_service.clone().start();
+
     // Handle ctrl+c by triggering the shutdown channel.
     let shutdown_tx = deps.shutdown_tx.clone();
     tokio::spawn(async move {
@@ -95,6 +97,7 @@ pub async fn run(port: u16) -> Result<()> {
     notifier_handle.abort();
     cleanup_handle.abort();
     memory_decay_handle.abort();
+    vigil_handle.abort();
 
     tracing::info!("praefectus daemon stopped");
     Ok(())
