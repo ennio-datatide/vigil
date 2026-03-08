@@ -19,6 +19,7 @@
     "zod": "^4.3"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.9"
   }
 }

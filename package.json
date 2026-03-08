@@ -14,7 +14,8 @@
     "check": "biome check .",
     "lint": "turbo lint",
     "test": "turbo test",
-    "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli"
+    "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli",
+    "generate:types": "openapi-typescript apps/daemon/openapi.json -o packages/shared/src/api-types.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
