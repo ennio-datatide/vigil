@@ -63,6 +63,9 @@ pub enum AppEvent {
     /// The acta (session summaries) were refreshed.
     ActaRefreshed { project_path: String },
 
+    /// An escalation timer fired (blocker went unanswered).
+    EscalationTriggered { session_id: String },
+
     /// A context compaction was requested by the Lictor.
     CompactionRequested {
         session_id: String,

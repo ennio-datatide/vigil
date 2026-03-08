@@ -4,6 +4,7 @@
 //! and other domain services.
 
 pub(crate) mod cleanup;
+pub(crate) mod escalation;
 pub(crate) mod lictor;
 pub(crate) mod memory_decay;
 pub(crate) mod memory_search;
