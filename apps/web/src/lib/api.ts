@@ -7,9 +7,10 @@ import type {
   Pipeline,
   Session,
   UpdatePipelineInputType,
+  VigilMessage,
 } from './types';
 
-const API_BASE = ''; // Uses Next.js rewrites to proxy to Fastify
+const API_BASE = ''; // Uses Next.js rewrites to proxy to daemon
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const token = getToken();
@@ -212,5 +213,44 @@ export function useDeletePipeline() {
   return useMutation({
     mutationFn: (id: string) => fetchJson(`/api/pipelines/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
+  });
+}
+
+// Vigil hooks
+
+export function useVigilHistoryQuery() {
+  return useQuery({
+    queryKey: ['vigil-history'],
+    queryFn: () => fetchJson<{ messages: VigilMessage[] }>('/api/vigil/history'),
+    refetchOnMount: 'always',
+  });
+}
+
+export function useVigilChat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) =>
+      fetchJson<{ response: string }>('/api/vigil/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vigil-history'] }),
+  });
+}
+
+export function useVigilStatusQuery() {
+  return useQuery({
+    queryKey: ['vigil-status'],
+    queryFn: () => fetchJson<{ activeProjects: string[] }>('/api/vigil/status'),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useSessionChildrenQuery(parentId: string) {
+  return useQuery({
+    queryKey: ['session-children', parentId],
+    queryFn: () => fetchJson<Session[]>(`/api/sessions/${parentId}/children`),
+    enabled: !!parentId,
   });
 }
