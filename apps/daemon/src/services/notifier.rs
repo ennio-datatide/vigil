@@ -14,6 +14,7 @@ use crate::db::models::SessionStatus;
 use crate::db::sqlite::SqliteDb;
 use crate::deps::AppDeps;
 use crate::events::{AppEvent, EventBus};
+use crate::services::session_store::SessionStore;
 use crate::services::settings_store::SettingsStore;
 
 /// Sends Telegram notifications on session status changes.
@@ -52,6 +53,11 @@ impl TelegramNotifier {
                             .await
                         {
                             tracing::error!(session_id, error = %e, "telegram notification failed");
+                        }
+                    }
+                    Ok(AppEvent::EscalationTriggered { session_id }) => {
+                        if let Err(e) = self.handle_escalation(&session_id).await {
+                            tracing::error!(session_id, error = %e, "escalation notification failed");
                         }
                     }
                     Ok(_) => {}
@@ -95,6 +101,50 @@ impl TelegramNotifier {
 
         if !config.dashboard_url.is_empty() {
             let _ = write!(message, "\n[Open Dashboard]({})", config.dashboard_url);
+        }
+
+        self.send_telegram(&config.bot_token, &config.chat_id, &message)
+            .await
+    }
+
+    /// Handle an escalation event: send a Telegram message about a blocker
+    /// that went unanswered past the timeout.
+    async fn handle_escalation(&self, session_id: &str) -> anyhow::Result<()> {
+        let settings_store = SettingsStore::new(self.db.clone());
+        let Some(raw) = settings_store.get("telegram").await? else {
+            return Ok(());
+        };
+        let config: TelegramConfig = serde_json::from_str(&raw)?;
+
+        if !config.enabled {
+            return Ok(());
+        }
+
+        let session_store = SessionStore::new(self.db.clone());
+        let (prompt, project) = match session_store.get(session_id).await? {
+            Some(s) => {
+                let truncated = if s.prompt.len() > 80 {
+                    format!("{}...", &s.prompt[..80])
+                } else {
+                    s.prompt.clone()
+                };
+                (truncated, s.project_path)
+            }
+            None => (session_id.to_string(), "unknown".to_string()),
+        };
+
+        let mut message = format!(
+            "\u{23f0} *Escalation* \u{2014} Session needs attention!\n\n\
+             *Session:* {prompt}\n\
+             *Project:* {project}"
+        );
+
+        if !config.dashboard_url.is_empty() {
+            let _ = write!(
+                message,
+                "\n\n[Open Dashboard]({}/dashboard/sessions/{session_id})",
+                config.dashboard_url
+            );
         }
 
         self.send_telegram(&config.bot_token, &config.chat_id, &message)
