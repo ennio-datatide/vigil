@@ -13,8 +13,6 @@ use tokio::process::Command;
 pub(crate) struct VigilCliResult {
     /// The text response from Claude.
     pub response: String,
-    /// Whether the invocation succeeded.
-    pub success: bool,
 }
 
 /// Write the MCP config JSON file for Vigil.
@@ -84,6 +82,5 @@ pub(crate) async fn invoke_vigil(
         } else {
             stdout.trim().to_string()
         },
-        success: output.status.success(),
     })
 }

@@ -14,7 +14,6 @@ use crate::db::kv::KvStore;
 use crate::db::models::SessionStatus;
 use crate::db::sqlite::SqliteDb;
 use crate::events::{AppEvent, EventBus};
-use crate::llm::vigil::VigilDeps;
 use crate::services::memory_search::MemorySearch;
 use crate::services::memory_store::MemoryStore;
 use crate::services::session_store::SessionStore;
@@ -329,16 +328,6 @@ impl VigilService {
         Ok(sections.join("\n"))
     }
 
-    /// Get the [`VigilDeps`] for building an agent (used by API routes).
-    pub(crate) fn vigil_deps(&self) -> VigilDeps {
-        VigilDeps {
-            memory_search: self.memory_search.clone(),
-            memory_store: self.memory_store.clone(),
-            db: Arc::clone(&self.db),
-            kv: self.kv.clone(),
-            sub_session: self.sub_session.clone(),
-        }
-    }
 }
 
 /// Truncate a string to a maximum length, appending "..." if truncated.

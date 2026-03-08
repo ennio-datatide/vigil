@@ -255,7 +255,7 @@ impl VigilMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let response = self
             .client
-            .put(&format!("{}/api/vigil/acta", self.daemon_url))
+            .put(format!("{}/api/vigil/acta", self.daemon_url))
             .json(&serde_json::json!({
                 "projectPath": args.project_path,
                 "content": args.content,
