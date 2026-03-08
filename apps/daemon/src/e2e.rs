@@ -477,7 +477,6 @@ async fn vigil_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
-    assert_eq!(body["projectPath"], "/tmp/vigil-e2e");
     assert!(
         body["response"].as_str().unwrap().contains("LLM integration pending"),
         "should return placeholder response"

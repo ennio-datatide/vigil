@@ -19,6 +19,7 @@ use crate::services::memory_search::MemorySearch;
 use crate::services::memory_store::MemoryStore;
 use crate::services::sub_session::SubSessionService;
 use crate::services::vigil::VigilService;
+use crate::services::vigil_chat::VigilChatStore;
 
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone)]
@@ -43,6 +44,8 @@ pub struct AppDeps {
     pub kv: KvStore,
     /// Vigil (per-project overseer) service.
     pub vigil_service: Arc<VigilService>,
+    /// Vigil chat history persistence.
+    pub vigil_chat_store: VigilChatStore,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -61,6 +64,7 @@ impl std::fmt::Debug for AppDeps {
             .field("sub_session_service", &"SubSessionService { .. }")
             .field("kv", &"KvStore { .. }")
             .field("vigil_service", &"VigilService { .. }")
+            .field("vigil_chat_store", &"VigilChatStore { .. }")
             .finish()
     }
 }
@@ -90,6 +94,7 @@ impl AppDeps {
         let memory_search = MemorySearch::new(Arc::clone(&db), lance.clone());
         let sub_session_service =
             SubSessionService::new(Arc::clone(&db), Arc::clone(&event_bus));
+        let vigil_chat_store = VigilChatStore::new(Arc::clone(&db));
         let vigil_service = Arc::new(VigilService::new(
             Arc::clone(&event_bus),
             Arc::clone(&db),
@@ -113,6 +118,7 @@ impl AppDeps {
             sub_session_service,
             kv,
             vigil_service,
+            vigil_chat_store,
         })
     }
 }
