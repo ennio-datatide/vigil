@@ -4,17 +4,20 @@
   "packageManager": "npm@11.11.0",
   "workspaces": [
     "apps/*",
-    "packages/*",
-    "cli"
+    "packages/*"
   ],
   "scripts": {
     "dev": "turbo dev",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:daemon": "cd apps/daemon && cargo run -- daemon",
     "build": "turbo build",
+    "build:daemon": "cd apps/daemon && cargo build --release",
+    "test": "turbo test",
+    "test:daemon": "cd apps/daemon && cargo test",
+    "lint:daemon": "cd apps/daemon && cargo clippy -- -D warnings",
     "format": "biome format --write .",
     "check": "biome check .",
-    "lint": "turbo lint",
-    "test": "turbo test",
-    "link-cli": "turbo build --filter=praefectus && npm link --workspace=cli"
+    "lint": "turbo lint"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
