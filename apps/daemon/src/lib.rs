@@ -11,7 +11,6 @@ pub(crate) mod db;
 pub(crate) mod deps;
 pub(crate) mod events;
 pub(crate) mod hooks;
-pub(crate) mod llm;
 pub(crate) mod process;
 pub(crate) mod services;
 

@@ -33,9 +33,6 @@ redb = "2.4"
 arrow-array = "57"
 arrow-schema = "57"
 
-# LLM
-rig-core = { version = "0.31", features = ["derive"] }
-
 # MCP
 rmcp = { version = "0.16", features = ["server", "transport-io"] }
 
