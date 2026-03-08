@@ -3,5 +3,6 @@
 //! Handles PTY management, output buffering, and agent process lifecycle.
 
 pub(crate) mod agent_spawner;
+pub(crate) mod claude_cli;
 pub(crate) mod output_manager;
 pub(crate) mod pty_manager;
