@@ -429,8 +429,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Chat with a project Vigil */
+        /** Chat with the global Vigil overseer */
         post: operations["vigilChat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vigil/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vigil chat history */
+        get: operations["getVigilHistory"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -650,8 +667,18 @@ export interface components {
             score: number;
         };
         ChatInput: {
-            projectPath: string;
+            projectPath?: string;
             message: string;
+        };
+        VigilMessage: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            role: "user" | "vigil";
+            content: string;
+            embeddedCards?: string | null;
+            /** Format: int64 */
+            createdAt: number;
         };
         HookPayload: {
             session_id: string;
@@ -1515,7 +1542,31 @@ export interface operations {
                 content: {
                     "application/json": {
                         response: string;
-                        projectPath: string;
+                    };
+                };
+            };
+        };
+    };
+    getVigilHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chat message history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        messages: components["schemas"]["VigilMessage"][];
                     };
                 };
             };
