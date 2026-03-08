@@ -17,7 +17,8 @@
     "lint:daemon": "cd apps/daemon && cargo clippy -- -D warnings",
     "format": "biome format --write .",
     "check": "biome check .",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "generate:types": "openapi-typescript apps/daemon/openapi.json -o packages/shared/src/api-types.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",

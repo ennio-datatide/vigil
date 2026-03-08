@@ -24,6 +24,7 @@ pub struct CreateSessionInput {
     pub skill: Option<String>,
     pub role: Option<SessionRole>,
     pub parent_id: Option<String>,
+    pub spawn_type: Option<SpawnType>,
     pub skip_permissions: Option<bool>,
     pub pipeline_id: Option<String>,
 }
@@ -92,11 +93,12 @@ impl SessionStore {
             .map(|s| serde_json::to_string(&vec![s]).expect("vec serialization cannot fail"));
 
         let role_text: Option<&str> = input.role.as_ref().map(role_to_str);
+        let spawn_type_text: Option<&str> = input.spawn_type.as_ref().map(spawn_type_to_str);
 
         sqlx::query(
             "INSERT INTO sessions (id, project_path, prompt, skills_used, status, agent_type, \
-             role, parent_id, retry_count, pipeline_id) \
-             VALUES (?, ?, ?, ?, 'queued', 'claude', ?, ?, 0, ?)",
+             role, parent_id, spawn_type, retry_count, pipeline_id) \
+             VALUES (?, ?, ?, ?, 'queued', 'claude', ?, ?, ?, 0, ?)",
         )
         .bind(id)
         .bind(&input.project_path)
@@ -104,6 +106,7 @@ impl SessionStore {
         .bind(&skills_used_json)
         .bind(role_text)
         .bind(&input.parent_id)
+        .bind(spawn_type_text)
         .bind(&input.pipeline_id)
         .execute(self.db.pool())
         .await
@@ -150,6 +153,43 @@ impl SessionStore {
             .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
     }
 
+    /// Transition a session to running state with worktree, start time, and git metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session is not found or the update fails.
+    #[allow(dead_code)] // Called by agent spawner (Task 1.12).
+    pub(crate) async fn update_running(
+        &self,
+        id: &str,
+        worktree_path: Option<&str>,
+        started_at: i64,
+        git_metadata: Option<&GitMetadata>,
+    ) -> Result<Session> {
+        let git_json: Option<String> = git_metadata
+            .map(|m| serde_json::to_string(m).expect("GitMetadata serialization cannot fail"));
+
+        let result = sqlx::query(
+            "UPDATE sessions SET status = 'running', worktree_path = ?, started_at = ?, \
+             git_metadata = ? WHERE id = ?",
+        )
+        .bind(worktree_path)
+        .bind(started_at)
+        .bind(&git_json)
+        .bind(id)
+        .execute(self.db.pool())
+        .await
+        .map_err(DbError::from)?;
+
+        if result.rows_affected() == 0 {
+            return Err(crate::error::Error::NotFound(format!("session {id}")));
+        }
+
+        self.get(id)
+            .await?
+            .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
+    }
+
     /// Reset a session back to queued state (for restart).
     ///
     /// # Errors
@@ -163,6 +203,34 @@ impl SessionStore {
         .execute(self.db.pool())
         .await
         .map_err(DbError::from)?;
+
+        if result.rows_affected() == 0 {
+            return Err(crate::error::Error::NotFound(format!("session {id}")));
+        }
+
+        self.get(id)
+            .await?
+            .ok_or_else(|| crate::error::Error::NotFound(format!("session {id}")))
+    }
+
+    /// Set the `pipeline_step_index` on a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session is not found or the update fails.
+    #[allow(dead_code)] // Called by session manager (Task 1.13).
+    pub(crate) async fn set_pipeline_step_index(
+        &self,
+        id: &str,
+        step_index: i32,
+    ) -> Result<Session> {
+        let result =
+            sqlx::query("UPDATE sessions SET pipeline_step_index = ? WHERE id = ?")
+                .bind(step_index)
+                .bind(id)
+                .execute(self.db.pool())
+                .await
+                .map_err(DbError::from)?;
 
         if result.rows_affected() == 0 {
             return Err(crate::error::Error::NotFound(format!("session {id}")));
@@ -198,7 +266,7 @@ impl SessionStore {
 // ---------------------------------------------------------------------------
 
 /// Map a raw `sqlx::sqlite::SqliteRow` to a [`Session`] domain model.
-fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
+pub(crate) fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
     let skills_used: Option<Vec<String>> = row
         .get::<Option<String>, _>("skills_used")
         .map(|s| serde_json::from_str(&s))
@@ -326,6 +394,13 @@ fn parse_spawn_type(s: &str) -> SpawnType {
     }
 }
 
+fn spawn_type_to_str(t: &SpawnType) -> &'static str {
+    match t {
+        SpawnType::Branch => "branch",
+        SpawnType::Worker => "worker",
+    }
+}
+
 /// Check whether a status represents a terminal (finished) state.
 pub(crate) fn is_terminal_status(status: &SessionStatus) -> bool {
     matches!(
@@ -368,6 +443,7 @@ mod tests {
             skill: None,
             role: None,
             parent_id: None,
+            spawn_type: None,
             skip_permissions: None,
             pipeline_id: None,
         }
@@ -504,6 +580,7 @@ mod tests {
             skill: None,
             role: Some(SessionRole::Reviewer),
             parent_id: Some("parent-123".into()),
+            spawn_type: None,
             skip_permissions: Some(true),
             pipeline_id: Some("pipe-1".into()),
         };

@@ -27,6 +27,10 @@ pub struct Config {
     pub pid_file: PathBuf,
     /// Base directory for git worktrees.
     pub worktree_base: PathBuf,
+    /// Directory for the `LanceDB` vector store.
+    pub lance_dir: PathBuf,
+    /// Path to the redb key-value store file.
+    pub kv_path: PathBuf,
     /// Optional bearer token for API authentication.
     pub api_token: Option<String>,
     /// Optional dashboard URL override.
@@ -51,6 +55,8 @@ impl Config {
         let skills_dir = praefectus_home.join("skills");
         let pid_file = praefectus_home.join("daemon.pid");
         let worktree_base = praefectus_home.join("worktrees");
+        let lance_dir = praefectus_home.join("lance");
+        let kv_path = praefectus_home.join("kv.redb");
 
         let api_token = std::env::var("PRAEFECTUS_AUTH_TOKEN").ok();
         let dashboard_url = std::env::var("PRAEFECTUS_DASHBOARD_URL").ok();
@@ -64,27 +70,31 @@ impl Config {
             skills_dir,
             pid_file,
             worktree_base,
+            lance_dir,
+            kv_path,
             api_token,
             dashboard_url,
         })
     }
 
-    /// Create a configuration suitable for tests.
+    /// Build a config rooted in `base` for use in tests.
     ///
-    /// Uses a temporary directory so each test gets an isolated database.
+    /// All paths are derived from `base` so each test gets an isolated
+    /// filesystem without touching the real `~/.praefectus`.
     #[cfg(test)]
     #[must_use]
-    pub fn test_config() -> Self {
-        let tmp = std::env::temp_dir().join(format!("pf-test-{}", uuid::Uuid::new_v4()));
+    pub fn for_testing(base: &std::path::Path) -> Self {
         Self {
             server_port: 0,
             web_port: 0,
-            praefectus_home: tmp.clone(),
-            db_path: tmp.join("test.db"),
-            logs_dir: tmp.join("logs"),
-            skills_dir: tmp.join("skills"),
-            pid_file: tmp.join("daemon.pid"),
-            worktree_base: tmp.join("worktrees"),
+            praefectus_home: base.to_path_buf(),
+            db_path: base.join("test.db"),
+            logs_dir: base.join("logs"),
+            skills_dir: base.join("skills"),
+            pid_file: base.join("daemon.pid"),
+            worktree_base: base.join("worktrees"),
+            lance_dir: base.join("lance"),
+            kv_path: base.join("kv.redb"),
             api_token: None,
             dashboard_url: None,
         }
@@ -96,7 +106,7 @@ impl Config {
     ///
     /// Returns an error if directory creation fails.
     pub fn ensure_dirs(&self) -> Result<()> {
-        for dir in [&self.praefectus_home, &self.logs_dir, &self.skills_dir, &self.worktree_base] {
+        for dir in [&self.praefectus_home, &self.logs_dir, &self.skills_dir, &self.worktree_base, &self.lance_dir] {
             std::fs::create_dir_all(dir).map_err(ConfigError::CreateDir)?;
         }
         Ok(())
