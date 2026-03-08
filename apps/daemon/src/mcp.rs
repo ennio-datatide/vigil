@@ -253,18 +253,13 @@ impl VigilMcpServer {
         &self,
         Parameters(args): Parameters<ActaUpdateArgs>,
     ) -> Result<CallToolResult, McpError> {
-        // Temporary: use POST /api/vigil/chat with a special message.
-        // Task 3 will add a proper PUT /api/vigil/acta endpoint.
-        let url = format!("{}/api/vigil/chat", self.daemon_url);
-        let body = serde_json::json!({
-            "projectPath": args.project_path,
-            "message": format!("[ACTA_UPDATE]\n{}", args.content),
-        });
-
         let response = self
             .client
-            .post(&url)
-            .json(&body)
+            .put(&format!("{}/api/vigil/acta", self.daemon_url))
+            .json(&serde_json::json!({
+                "projectPath": args.project_path,
+                "content": args.content,
+            }))
             .send()
             .await
             .map_err(|e| McpError::internal_error(format!("HTTP request failed: {e}"), None))?;

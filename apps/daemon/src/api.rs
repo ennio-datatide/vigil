@@ -65,7 +65,7 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/fs/dirs", get(filesystem::list_dirs))
         .route("/vigil/status", get(vigil::get_status))
         .route("/vigil/chat", post(vigil::chat))
-        .route("/vigil/acta", get(vigil::get_acta))
+        .route("/vigil/acta", get(vigil::get_acta).put(vigil::update_acta))
         .route("/vigil/history", get(vigil::get_history))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),

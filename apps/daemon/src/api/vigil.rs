@@ -155,6 +155,26 @@ pub(crate) async fn chat(
     })))
 }
 
+/// Request body for `PUT /api/vigil/acta`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateActaInput {
+    pub project_path: String,
+    pub content: String,
+}
+
+/// `PUT /api/vigil/acta` — update the acta for a project.
+pub(crate) async fn update_acta(
+    State(deps): State<AppDeps>,
+    Json(input): Json<UpdateActaInput>,
+) -> Result<impl IntoResponse> {
+    deps.vigil_service
+        .update_acta(&input.project_path, &input.content)
+        .await?;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// `GET /api/vigil/acta?projectPath=...` — get the acta for a project.
 pub(crate) async fn get_acta(
     State(deps): State<AppDeps>,
@@ -231,6 +251,33 @@ mod tests {
         let json = json_body(resp).await;
         let projects = json["activeProjects"].as_array().expect("should be array");
         assert!(projects.is_empty(), "no vigils should be active initially");
+    }
+
+    #[tokio::test]
+    async fn update_and_get_acta() {
+        let (app, _dir) = test_app().await;
+
+        // Update acta.
+        let body = serde_json::json!({
+            "projectPath": "/tmp/acta-test",
+            "content": "This is the project briefing."
+        });
+        let req = Request::builder()
+            .method("PUT")
+            .uri("/api/vigil/acta")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Get acta should return the content.
+        let resp = app
+            .oneshot(get("/api/vigil/acta?projectPath=%2Ftmp%2Facta-test"))
+            .await
+            .unwrap();
+        let json = json_body(resp).await;
+        assert_eq!(json["acta"], "This is the project briefing.");
     }
 
     #[tokio::test]
