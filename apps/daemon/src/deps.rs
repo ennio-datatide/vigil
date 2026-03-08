@@ -15,6 +15,7 @@ use crate::error::Result;
 use crate::events::EventBus;
 use crate::process::output_manager::OutputManager;
 use crate::process::pty_manager::PtyManager;
+use crate::services::escalation::EscalationService;
 use crate::services::memory_search::MemorySearch;
 use crate::services::memory_store::MemoryStore;
 use crate::services::sub_session::SubSessionService;
@@ -46,6 +47,8 @@ pub struct AppDeps {
     pub vigil_service: Arc<VigilService>,
     /// Vigil chat history persistence.
     pub vigil_chat_store: VigilChatStore,
+    /// Blocker escalation timer service.
+    pub escalation_service: EscalationService,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -65,6 +68,7 @@ impl std::fmt::Debug for AppDeps {
             .field("kv", &"KvStore { .. }")
             .field("vigil_service", &"VigilService { .. }")
             .field("vigil_chat_store", &"VigilChatStore { .. }")
+            .field("escalation_service", &"EscalationService { .. }")
             .finish()
     }
 }
@@ -103,6 +107,7 @@ impl AppDeps {
             kv.clone(),
             sub_session_service.clone(),
         ));
+        let escalation_service = EscalationService::with_default_timeout(Arc::clone(&event_bus));
 
         Ok(Self {
             config: Arc::new(config),
@@ -119,6 +124,7 @@ impl AppDeps {
             kv,
             vigil_service,
             vigil_chat_store,
+            escalation_service,
         })
     }
 }

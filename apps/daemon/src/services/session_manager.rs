@@ -15,6 +15,7 @@ use crate::db::models::{NotificationType, SessionStatus};
 use crate::db::sqlite::SqliteDb;
 use crate::deps::AppDeps;
 use crate::events::{AppEvent, EventBus};
+use crate::services::escalation::EscalationService;
 use crate::services::notification_store::NotificationStore;
 use crate::services::pipeline_store::PipelineStore;
 use crate::services::session_store::{CreateSessionInput, SessionStore};
@@ -24,6 +25,7 @@ pub(crate) struct SessionManager {
     db: Arc<SqliteDb>,
     event_bus: Arc<EventBus>,
     config: Arc<Config>,
+    escalation_service: EscalationService,
 }
 
 impl SessionManager {
@@ -34,6 +36,7 @@ impl SessionManager {
             db: deps.db.clone(),
             event_bus: deps.event_bus.clone(),
             config: deps.config.clone(),
+            escalation_service: deps.escalation_service.clone(),
         }
     }
 
@@ -66,9 +69,22 @@ impl SessionManager {
                     }
                     Ok(AppEvent::StatusChanged {
                         session_id,
+                        old_status,
                         new_status,
-                        ..
                     }) => {
+                        // Start/cancel escalation timers for blocker statuses.
+                        if matches!(
+                            new_status,
+                            SessionStatus::NeedsInput | SessionStatus::AuthRequired
+                        ) {
+                            self.escalation_service.start_timer(&session_id).await;
+                        } else if matches!(
+                            old_status,
+                            SessionStatus::NeedsInput | SessionStatus::AuthRequired
+                        ) {
+                            self.escalation_service.cancel_timer(&session_id).await;
+                        }
+
                         if new_status == SessionStatus::Completed
                             && let Err(e) = self.advance_pipeline(&session_id).await
                         {
@@ -314,10 +330,29 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
     use crate::db::models::{PipelineEdge, PipelineStep, Position};
     use crate::db::sqlite::SqliteDb;
     use crate::services::pipeline_store::CreatePipelineInput;
     use tempfile::TempDir;
+
+    /// Create a test `SessionManager` with a short escalation timeout.
+    fn test_manager(
+        db: &Arc<SqliteDb>,
+        event_bus: &Arc<EventBus>,
+        dir: &TempDir,
+    ) -> (SessionManager, EscalationService) {
+        let escalation =
+            EscalationService::new(Arc::clone(event_bus), Duration::from_millis(100));
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(dir.path())),
+            escalation_service: escalation.clone(),
+        };
+        (manager, escalation)
+    }
 
     /// Create an isolated test database with migrations applied.
     async fn test_db() -> (Arc<SqliteDb>, TempDir) {
@@ -360,11 +395,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         let payload = serde_json::json!({ "reason": "auth_required" });
         manager
@@ -404,11 +435,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // Normal stop (no auth_required in payload).
         let payload = serde_json::json!({ "reason": "completed" });
@@ -433,11 +460,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         let payload = serde_json::json!({ "message": "Please review the changes" });
         manager
@@ -471,11 +494,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // No message in payload -- should use default.
         manager
@@ -554,11 +573,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         manager.advance_pipeline("sess-1").await.unwrap();
 
@@ -616,11 +631,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // Should be a no-op -- no next step.
         manager.advance_pipeline("sess-1").await.unwrap();
@@ -653,11 +664,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         manager
             .handle_child_completion("child-1", true)
@@ -706,11 +713,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         manager
             .handle_child_completion("sess-1", true)
@@ -749,11 +752,7 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // Handle as failed (success = false).
         manager
@@ -794,16 +793,93 @@ mod tests {
             .await
             .unwrap();
 
-        let manager = SessionManager {
-            db: db.clone(),
-            event_bus: event_bus.clone(),
-            config: Arc::new(Config::for_testing(_dir.path())),
-        };
+        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // Should be a no-op -- no pipeline_id.
         manager.advance_pipeline("sess-1").await.unwrap();
 
         let all_sessions = session_store.list().await.unwrap();
         assert_eq!(all_sessions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn needs_input_starts_escalation_timer() {
+        let (db, _dir) = test_db().await;
+        let event_bus = Arc::new(EventBus::new(64));
+        let escalation =
+            EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(50));
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(_dir.path())),
+            escalation_service: escalation.clone(),
+        };
+
+        let session_store = SessionStore::new(db.clone());
+        session_store
+            .create("sess-1", &sample_session_input())
+            .await
+            .unwrap();
+
+        // Start the manager's event loop.
+        let handle = manager.start();
+
+        // Emit a StatusChanged event to NeedsInput.
+        let _ = event_bus.emit(AppEvent::StatusChanged {
+            session_id: "sess-1".to_string(),
+            old_status: SessionStatus::Running,
+            new_status: SessionStatus::NeedsInput,
+        });
+
+        // Wait for the escalation timer to fire.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(escalation.was_escalated("sess-1").await);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn resume_cancels_escalation_timer() {
+        let (db, _dir) = test_db().await;
+        let event_bus = Arc::new(EventBus::new(64));
+        let escalation =
+            EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(200));
+        let manager = SessionManager {
+            db: db.clone(),
+            event_bus: event_bus.clone(),
+            config: Arc::new(Config::for_testing(_dir.path())),
+            escalation_service: escalation.clone(),
+        };
+
+        let session_store = SessionStore::new(db.clone());
+        session_store
+            .create("sess-1", &sample_session_input())
+            .await
+            .unwrap();
+
+        let handle = manager.start();
+
+        // Transition to NeedsInput — starts timer.
+        let _ = event_bus.emit(AppEvent::StatusChanged {
+            session_id: "sess-1".to_string(),
+            old_status: SessionStatus::Running,
+            new_status: SessionStatus::NeedsInput,
+        });
+
+        // Give the event loop time to process.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        // Resume — should cancel the timer.
+        let _ = event_bus.emit(AppEvent::StatusChanged {
+            session_id: "sess-1".to_string(),
+            old_status: SessionStatus::NeedsInput,
+            new_status: SessionStatus::Running,
+        });
+
+        // Wait past the original timeout.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(!escalation.was_escalated("sess-1").await);
+
+        handle.abort();
     }
 }
