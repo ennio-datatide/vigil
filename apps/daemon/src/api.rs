@@ -73,6 +73,7 @@ pub fn router(deps: AppDeps) -> Router {
 
     Router::new()
         .route("/health", get(health::health))
+        .route("/openapi.json", get(health::openapi_spec))
         .route("/events", post(events::ingest_event))
         .route("/ws/dashboard", get(ws_dashboard::ws_dashboard))
         .route(

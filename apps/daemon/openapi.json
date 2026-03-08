@@ -1,0 +1,1245 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Praefectus Daemon API",
+    "description": "REST API for the Praefectus AI session orchestrator daemon.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok"] }
+                  },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "post": {
+        "operationId": "ingestEvent",
+        "summary": "Ingest a hook event from a Claude Code agent",
+        "tags": ["Events"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HookPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event ingested",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "List all sessions, most recent first",
+        "tags": ["Sessions"],
+        "responses": {
+          "200": {
+            "description": "Array of sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Session" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSession",
+        "summary": "Create a new session and spawn an agent",
+        "tags": ["Sessions"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateSessionInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Session" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "Get a single session by ID",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Session" }
+              }
+            }
+          },
+          "404": { "description": "Session not found" }
+        }
+      },
+      "delete": {
+        "operationId": "cancelSession",
+        "summary": "Cancel a running session",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session cancelled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/api/sessions/{id}/remove": {
+      "delete": {
+        "operationId": "removeSession",
+        "summary": "Hard-delete a session record",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/api/sessions/{id}/restart": {
+      "post": {
+        "operationId": "restartSession",
+        "summary": "Restart a failed or cancelled session",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session restarted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Session" }
+              }
+            }
+          },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/api/sessions/{id}/resume": {
+      "post": {
+        "operationId": "resumeSession",
+        "summary": "Resume a session that needs input",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session resumed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/api/sessions/{id}/children": {
+      "get": {
+        "operationId": "listChildren",
+        "summary": "List child sessions of a parent",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of child sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Session" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/spawn": {
+      "post": {
+        "operationId": "spawnChild",
+        "summary": "Spawn a child sub-session",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SpawnInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Child session spawned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Session" }
+              }
+            }
+          },
+          "400": { "description": "Concurrency limit reached or parent not running" },
+          "404": { "description": "Parent session not found" }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "summary": "List all registered projects",
+        "tags": ["Projects"],
+        "responses": {
+          "200": {
+            "description": "Array of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Project" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProject",
+        "summary": "Register a new project",
+        "tags": ["Projects"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateProjectInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{path}": {
+      "delete": {
+        "operationId": "deleteProject",
+        "summary": "Unregister a project (URL-encoded path)",
+        "tags": ["Projects"],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "URL-encoded project path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project unregistered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "summary": "List notifications, optionally filtered to unread",
+        "tags": ["Notifications"],
+        "parameters": [
+          {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Notification" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "patch": {
+        "operationId": "readAllNotifications",
+        "summary": "Mark all unread notifications as read",
+        "tags": ["Notifications"],
+        "responses": {
+          "200": {
+            "description": "Count of updated notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": { "type": "integer" }
+                  },
+                  "required": ["updated"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "patch": {
+        "operationId": "markNotificationRead",
+        "summary": "Mark a single notification as read",
+        "tags": ["Notifications"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification marked read",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Notification not found" }
+        }
+      }
+    },
+    "/api/notifications/test": {
+      "post": {
+        "operationId": "testNotification",
+        "summary": "Create a test notification",
+        "tags": ["Notifications"],
+        "responses": {
+          "200": {
+            "description": "Test notification created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["ok", "message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "operationId": "listSkills",
+        "summary": "List available skills",
+        "tags": ["Skills"],
+        "responses": {
+          "200": {
+            "description": "Array of skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SkillInfo" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipelines": {
+      "get": {
+        "operationId": "listPipelines",
+        "summary": "List all pipelines",
+        "tags": ["Pipelines"],
+        "responses": {
+          "200": {
+            "description": "Array of pipelines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Pipeline" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPipeline",
+        "summary": "Create a new pipeline",
+        "tags": ["Pipelines"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePipelineInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pipeline created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pipeline" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipelines/{id}": {
+      "get": {
+        "operationId": "getPipeline",
+        "summary": "Get a pipeline by ID",
+        "tags": ["Pipelines"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pipeline" }
+              }
+            }
+          },
+          "404": { "description": "Pipeline not found" }
+        }
+      },
+      "put": {
+        "operationId": "updatePipeline",
+        "summary": "Update an existing pipeline",
+        "tags": ["Pipelines"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdatePipelineInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pipeline updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Pipeline" }
+              }
+            }
+          },
+          "404": { "description": "Pipeline not found" }
+        }
+      },
+      "delete": {
+        "operationId": "deletePipeline",
+        "summary": "Delete a pipeline",
+        "tags": ["Pipelines"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Pipeline not found" }
+        }
+      }
+    },
+    "/api/settings/telegram": {
+      "get": {
+        "operationId": "getTelegramSettings",
+        "summary": "Get Telegram notification settings",
+        "tags": ["Settings"],
+        "responses": {
+          "200": {
+            "description": "Telegram configuration (token is masked)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TelegramConfigResponse" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putTelegramSettings",
+        "summary": "Save Telegram notification settings",
+        "tags": ["Settings"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TelegramConfig" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/telegram/test": {
+      "post": {
+        "operationId": "testTelegram",
+        "summary": "Test Telegram configuration",
+        "tags": ["Settings"],
+        "responses": {
+          "200": {
+            "description": "Telegram is configured and enabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "400": { "description": "Telegram is not configured or disabled" }
+        }
+      }
+    },
+    "/api/memory": {
+      "get": {
+        "operationId": "listMemories",
+        "summary": "List memories for a project",
+        "tags": ["Memory"],
+        "parameters": [
+          {
+            "name": "projectPath",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of memories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Memory" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMemory",
+        "summary": "Create a new memory",
+        "tags": ["Memory"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMemoryInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Memory created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Memory" }
+              }
+            }
+          },
+          "400": { "description": "Content must not be empty" }
+        }
+      }
+    },
+    "/api/memory/search": {
+      "post": {
+        "operationId": "searchMemories",
+        "summary": "Hybrid search across memories",
+        "tags": ["Memory"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SearchInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Array of search results with scores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/MemorySearchResult" }
+                }
+              }
+            }
+          },
+          "400": { "description": "Query must not be empty" }
+        }
+      }
+    },
+    "/api/memory/{id}": {
+      "delete": {
+        "operationId": "deleteMemory",
+        "summary": "Delete a memory by ID",
+        "tags": ["Memory"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memory deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OkResponse" }
+              }
+            }
+          },
+          "404": { "description": "Memory not found" }
+        }
+      }
+    },
+    "/api/vigil/status": {
+      "get": {
+        "operationId": "getVigilStatus",
+        "summary": "List all active Vigils and their status",
+        "tags": ["Vigil"],
+        "responses": {
+          "200": {
+            "description": "Vigil status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "activeProjects": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "required": ["activeProjects"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vigil/chat": {
+      "post": {
+        "operationId": "vigilChat",
+        "summary": "Chat with a project Vigil",
+        "tags": ["Vigil"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vigil chat response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "response": { "type": "string" },
+                    "projectPath": { "type": "string" }
+                  },
+                  "required": ["response", "projectPath"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vigil/acta": {
+      "get": {
+        "operationId": "getActa",
+        "summary": "Get the acta (briefing) for a project",
+        "tags": ["Vigil"],
+        "parameters": [
+          {
+            "name": "projectPath",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project acta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projectPath": { "type": "string" },
+                    "acta": {
+                      "type": ["string", "null"],
+                      "description": "Null if no acta exists for the project"
+                    }
+                  },
+                  "required": ["projectPath", "acta"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/dirs": {
+      "get": {
+        "operationId": "listDirs",
+        "summary": "List directories matching a prefix for autocomplete",
+        "tags": ["Filesystem"],
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching directory paths",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dirs": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "required": ["dirs"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OkResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean", "enum": [true] }
+        },
+        "required": ["ok"]
+      },
+      "SessionStatus": {
+        "type": "string",
+        "enum": ["queued", "running", "needs_input", "auth_required", "completed", "failed", "cancelled", "interrupted"]
+      },
+      "AgentType": {
+        "type": "string",
+        "enum": ["claude", "codex"]
+      },
+      "SessionRole": {
+        "type": "string",
+        "enum": ["implementer", "reviewer", "fixer", "custom"]
+      },
+      "ExitReason": {
+        "type": "string",
+        "enum": ["completed", "error", "user_cancelled", "chain_triggered"]
+      },
+      "SpawnType": {
+        "type": "string",
+        "enum": ["branch", "worker"]
+      },
+      "NotificationType": {
+        "type": "string",
+        "enum": ["needs_input", "error", "auth_required", "chain_complete", "session_done"]
+      },
+      "MemoryType": {
+        "type": "string",
+        "enum": ["fact", "decision", "preference", "pattern", "failure", "todo"]
+      },
+      "GitMetadata": {
+        "type": "object",
+        "properties": {
+          "repoName": { "type": "string" },
+          "branch": { "type": "string" },
+          "commitHash": { "type": "string" },
+          "remoteUrl": { "type": ["string", "null"] }
+        },
+        "required": ["repoName", "branch", "commitHash"]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "worktreePath": { "type": ["string", "null"] },
+          "tmuxSession": { "type": ["string", "null"] },
+          "prompt": { "type": "string" },
+          "skillsUsed": {
+            "type": ["array", "null"],
+            "items": { "type": "string" }
+          },
+          "status": { "$ref": "#/components/schemas/SessionStatus" },
+          "agentType": { "$ref": "#/components/schemas/AgentType" },
+          "role": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/SessionRole" },
+              { "type": "null" }
+            ]
+          },
+          "parentId": { "type": ["string", "null"] },
+          "spawnType": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/SpawnType" },
+              { "type": "null" }
+            ]
+          },
+          "spawnResult": { "type": ["string", "null"] },
+          "retryCount": { "type": "integer" },
+          "startedAt": { "type": ["integer", "null"], "description": "Unix milliseconds" },
+          "endedAt": { "type": ["integer", "null"], "description": "Unix milliseconds" },
+          "exitReason": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/ExitReason" },
+              { "type": "null" }
+            ]
+          },
+          "gitMetadata": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/GitMetadata" },
+              { "type": "null" }
+            ]
+          },
+          "pipelineId": { "type": ["string", "null"] },
+          "pipelineStepIndex": { "type": ["integer", "null"] }
+        },
+        "required": ["id", "projectPath", "prompt", "status", "agentType", "retryCount"]
+      },
+      "CreateSessionInput": {
+        "type": "object",
+        "properties": {
+          "projectPath": { "type": "string" },
+          "prompt": { "type": "string" },
+          "skill": { "type": "string" },
+          "role": { "$ref": "#/components/schemas/SessionRole" },
+          "parentId": { "type": "string" },
+          "spawnType": { "$ref": "#/components/schemas/SpawnType" },
+          "skipPermissions": { "type": "boolean" },
+          "pipelineId": { "type": "string" }
+        },
+        "required": ["projectPath", "prompt"]
+      },
+      "SpawnInput": {
+        "type": "object",
+        "properties": {
+          "spawnType": { "$ref": "#/components/schemas/SpawnType" },
+          "prompt": { "type": "string" },
+          "skill": { "type": "string" }
+        },
+        "required": ["spawnType", "prompt"]
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "skillsDir": { "type": ["string", "null"] },
+          "lastUsedAt": { "type": ["integer", "null"], "description": "Unix milliseconds" }
+        },
+        "required": ["path", "name"]
+      },
+      "CreateProjectInput": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" }
+        },
+        "required": ["path", "name"]
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "sessionId": { "type": "string" },
+          "type": { "$ref": "#/components/schemas/NotificationType" },
+          "message": { "type": "string" },
+          "sentAt": { "type": ["integer", "null"], "description": "Unix milliseconds" },
+          "readAt": { "type": ["integer", "null"], "description": "Unix milliseconds" }
+        },
+        "required": ["id", "sessionId", "type", "message"]
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "x": { "type": "number" },
+          "y": { "type": "number" }
+        },
+        "required": ["x", "y"]
+      },
+      "PipelineStep": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "prompt": { "type": "string" },
+          "skill": { "type": ["string", "null"] },
+          "position": { "$ref": "#/components/schemas/Position" }
+        },
+        "required": ["id", "label", "prompt", "position"]
+      },
+      "PipelineEdge": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "type": "string" },
+          "target": { "type": "string" }
+        },
+        "required": ["id", "source", "target"]
+      },
+      "Pipeline": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineStep" }
+          },
+          "edges": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineEdge" }
+          },
+          "isDefault": { "type": "boolean" },
+          "createdAt": { "type": "integer", "description": "Unix milliseconds" },
+          "updatedAt": { "type": "integer", "description": "Unix milliseconds" }
+        },
+        "required": ["id", "name", "description", "steps", "edges", "isDefault", "createdAt", "updatedAt"]
+      },
+      "CreatePipelineInput": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string", "default": "" },
+          "steps": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineStep" }
+          },
+          "edges": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineEdge" }
+          },
+          "isDefault": { "type": "boolean", "default": false }
+        },
+        "required": ["name", "steps", "edges"]
+      },
+      "UpdatePipelineInput": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineStep" }
+          },
+          "edges": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PipelineEdge" }
+          },
+          "isDefault": { "type": "boolean" }
+        }
+      },
+      "TelegramConfig": {
+        "type": "object",
+        "properties": {
+          "botToken": { "type": "string" },
+          "chatId": { "type": "string" },
+          "dashboardUrl": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "events": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["botToken", "chatId", "dashboardUrl", "enabled", "events"]
+      },
+      "TelegramConfigResponse": {
+        "type": "object",
+        "properties": {
+          "configured": { "type": "boolean" },
+          "botToken": { "type": "string", "description": "Masked token (first 4 + ... + last 4)" },
+          "chatId": { "type": "string" },
+          "dashboardUrl": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "events": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["configured"]
+      },
+      "Memory": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "content": { "type": "string" },
+          "memoryType": { "$ref": "#/components/schemas/MemoryType" },
+          "sourceSessionId": { "type": ["string", "null"] },
+          "importance": { "type": "number" },
+          "accessCount": { "type": "integer", "format": "int64" },
+          "createdAt": { "type": "integer", "description": "Unix milliseconds" },
+          "accessedAt": { "type": "integer", "description": "Unix milliseconds" }
+        },
+        "required": ["id", "projectPath", "content", "memoryType", "importance", "accessCount", "createdAt", "accessedAt"]
+      },
+      "CreateMemoryInput": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string" },
+          "memoryType": { "$ref": "#/components/schemas/MemoryType" },
+          "projectPath": { "type": "string" },
+          "sourceSessionId": { "type": "string" },
+          "importance": { "type": "number" }
+        },
+        "required": ["content", "memoryType", "projectPath"]
+      },
+      "SearchInput": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "limit": { "type": "integer" }
+        },
+        "required": ["query"]
+      },
+      "MemorySearchResult": {
+        "type": "object",
+        "properties": {
+          "memory": { "$ref": "#/components/schemas/Memory" },
+          "score": { "type": "number" }
+        },
+        "required": ["memory", "score"]
+      },
+      "ChatInput": {
+        "type": "object",
+        "properties": {
+          "projectPath": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["projectPath", "message"]
+      },
+      "HookPayload": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string" },
+          "data": { "type": "object", "additionalProperties": true }
+        },
+        "required": ["session_id", "data"]
+      },
+      "SkillInfo": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" }
+        },
+        "required": ["name", "path"]
+      }
+    }
+  },
+  "tags": [
+    { "name": "System", "description": "Health and system endpoints" },
+    { "name": "Events", "description": "Hook event ingestion" },
+    { "name": "Sessions", "description": "AI session management" },
+    { "name": "Projects", "description": "Project registration" },
+    { "name": "Notifications", "description": "Notification management" },
+    { "name": "Skills", "description": "Skill listing" },
+    { "name": "Pipelines", "description": "Multi-step pipeline definitions" },
+    { "name": "Settings", "description": "Daemon configuration" },
+    { "name": "Memory", "description": "Knowledge graph memory" },
+    { "name": "Vigil", "description": "Project overseer agent" },
+    { "name": "Filesystem", "description": "Directory browsing for project picker" }
+  ]
+}
