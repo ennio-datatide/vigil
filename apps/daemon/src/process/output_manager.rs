@@ -111,6 +111,18 @@ impl OutputManager {
         self.buffers.write().await.remove(session_id);
     }
 
+    /// Get the full output for a session, preferring the disk log (complete)
+    /// over the in-memory buffer (may be truncated or cleared).
+    pub(crate) fn get_full_output(&self, session_id: &str) -> Option<Vec<u8>> {
+        // Prefer disk log — it's never truncated during a session.
+        if let Some(disk) = self.read_log(session_id) {
+            if !disk.is_empty() {
+                return Some(disk);
+            }
+        }
+        None
+    }
+
     // -- helpers --
 
     fn log_path(&self, session_id: &str) -> PathBuf {
@@ -196,5 +208,33 @@ mod tests {
         mgr.ensure_buffer("s1").await;
         let buf = mgr.get_buffer("s1").await.unwrap();
         assert!(buf.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_full_output_prefers_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = OutputManager::new(dir.path().to_path_buf());
+        mgr.append("s1", b"hello ").await;
+        mgr.append("s1", b"world").await;
+        mgr.remove("s1").await;
+        let output = mgr.get_full_output("s1");
+        assert_eq!(output, Some(b"hello world".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn get_full_output_no_disk_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = OutputManager::new(dir.path().to_path_buf());
+        mgr.ensure_buffer("s1").await;
+        // No disk log exists, get_full_output returns None
+        // (caller should use get_buffer as fallback)
+        assert!(mgr.get_full_output("s1").is_none());
+    }
+
+    #[tokio::test]
+    async fn get_full_output_returns_none_for_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = OutputManager::new(dir.path().to_path_buf());
+        assert!(mgr.get_full_output("unknown").is_none());
     }
 }
