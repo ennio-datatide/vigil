@@ -1,7 +1,7 @@
 //! MCP server for Vigil tools.
 //!
-//! Exposes the 6 Vigil tools (`memory_recall`, `memory_save`, `memory_delete`,
-//! `session_recall`, `acta_update`, `spawn_worker`) via the Model Context Protocol
+//! Exposes the 7 Vigil tools (`memory_recall`, `memory_save`, `memory_delete`,
+//! `session_recall`, `acta_update`, `spawn_worker`, `execute_pipeline`) via the Model Context Protocol
 //! stdio transport. Launched as a subprocess by the `claude` CLI.
 
 use anyhow::Result;
@@ -74,6 +74,25 @@ pub(crate) struct SpawnWorkerArgs {
     /// Optional skill to assign the worker.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill: Option<String>,
+    /// If true (default), block until the worker completes and return its output.
+    /// Set to false for long-running tasks where you don't need the result immediately.
+    #[serde(default = "default_wait")]
+    pub wait: bool,
+}
+
+fn default_wait() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub(crate) struct ExecutePipelineArgs {
+    /// Absolute path to the project directory.
+    pub project_path: String,
+    /// The user's request / instructions for the pipeline.
+    pub prompt: String,
+    /// Pipeline ID to execute. If omitted, uses the default pipeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipeline_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +299,7 @@ impl VigilMcpServer {
     }
 
     /// Spawn a new worker session with a specific prompt.
-    #[tool(name = "spawn_worker", description = "Spawn a new Claude Code worker session with a prompt. Optionally assign a skill. Returns the created session info.")]
+    #[tool(name = "spawn_worker", description = "Spawn a new Claude Code worker session. By default waits for completion and returns the worker's output. Set wait=false for long-running tasks.")]
     async fn spawn_worker(
         &self,
         Parameters(args): Parameters<SpawnWorkerArgs>,
@@ -309,8 +328,133 @@ impl VigilMcpServer {
             .await
             .map_err(|e| McpError::internal_error(format!("Failed to read response: {e}"), None))?;
 
+        if !status.is_success() {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "Error {status}: {text}"
+            ))]));
+        }
+
+        // Extract session ID from the create response.
+        let session_id = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v["id"].as_str().map(String::from));
+
+        if !args.wait {
+            return Ok(CallToolResult::success(vec![Content::text(text)]));
+        }
+
+        // Wait for the worker to complete, polling every 3 seconds.
+        let Some(ref sid) = session_id else {
+            return Ok(CallToolResult::success(vec![Content::text(text)]));
+        };
+
+        let session_url = format!("{}/api/sessions/{sid}", self.daemon_url);
+        let max_wait = std::time::Duration::from_secs(240);
+        let poll_interval = std::time::Duration::from_secs(3);
+        let start = std::time::Instant::now();
+
+        loop {
+            tokio::time::sleep(poll_interval).await;
+
+            if start.elapsed() > max_wait {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Worker {sid} is still running after {}s. Check status with session_recall.",
+                    max_wait.as_secs()
+                ))]));
+            }
+
+            let Ok(resp) = self.client.get(&session_url).send().await else {
+                continue;
+            };
+
+            let Ok(body) = resp.text().await else {
+                continue;
+            };
+
+            let Ok(session) = serde_json::from_str::<serde_json::Value>(&body) else {
+                continue;
+            };
+
+            let status_str = session["status"].as_str().unwrap_or("");
+            match status_str {
+                "completed" | "failed" | "cancelled" | "interrupted" => {
+                    // Session is done — return the full response including output.
+                    let output = session["output"].as_str().unwrap_or("(no output captured)");
+                    let result = format!(
+                        "Worker {sid} {status_str}.\n\nOutput:\n{output}"
+                    );
+                    return Ok(CallToolResult::success(vec![Content::text(result)]));
+                }
+                _ => {
+                    // Still running — keep polling.
+                }
+            }
+        }
+    }
+
+    /// Execute a multi-step pipeline for coding tasks.
+    #[tool(name = "execute_pipeline", description = "Execute a multi-step pipeline (brainstorm → design → code → review) for coding tasks. Non-blocking — starts the pipeline and returns immediately. The user can watch progress in the session monitor.")]
+    async fn execute_pipeline(
+        &self,
+        Parameters(args): Parameters<ExecutePipelineArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        // Step 1: Resolve pipeline_id — use provided or find the default.
+        let pipeline_id = if let Some(id) = args.pipeline_id {
+            id
+        } else {
+            // Find the default pipeline via GET /api/pipelines
+            let url = format!("{}/api/pipelines", self.daemon_url);
+            let response = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| McpError::internal_error(format!("HTTP request failed: {e}"), None))?;
+            let text = response
+                .text()
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(format!("Failed to read response: {e}"), None)
+                })?;
+            let pipelines: Vec<serde_json::Value> = serde_json::from_str(&text).map_err(|e| {
+                McpError::internal_error(format!("Failed to parse pipelines: {e}"), None)
+            })?;
+            pipelines
+                .iter()
+                .find(|p| p["isDefault"].as_bool() == Some(true))
+                .and_then(|p| p["id"].as_str())
+                .map(String::from)
+                .ok_or_else(|| {
+                    McpError::internal_error("No default pipeline found".to_string(), None)
+                })?
+        };
+
+        // Step 2: Execute via POST /api/pipelines/:id/execute
+        let url = format!("{}/api/pipelines/{pipeline_id}/execute", self.daemon_url);
+        let body = serde_json::json!({
+            "projectPath": args.project_path,
+            "prompt": args.prompt,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| McpError::internal_error(format!("HTTP request failed: {e}"), None))?;
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .map_err(|e| McpError::internal_error(format!("Failed to read response: {e}"), None))?;
+
         if status.is_success() {
-            Ok(CallToolResult::success(vec![Content::text(text)]))
+            let exec: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            let exec_id = exec["id"].as_str().unwrap_or("unknown");
+            Ok(CallToolResult::success(vec![Content::text(format!(
+                "Pipeline execution started (ID: {exec_id}). The user can watch progress in the session monitor."
+            ))]))
         } else {
             Ok(CallToolResult::error(vec![Content::text(format!(
                 "Error {status}: {text}"
@@ -324,7 +468,7 @@ impl ServerHandler for VigilMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Vigil MCP server — provides memory, session, and worker management tools \
+                "Vigil MCP server — provides memory, session, worker, and pipeline management tools \
                  for the Praefectus AI session orchestrator."
                     .into(),
             ),
