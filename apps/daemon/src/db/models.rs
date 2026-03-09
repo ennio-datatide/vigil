@@ -237,3 +237,29 @@ pub struct MemoryEdge {
     pub weight: f64,
     pub created_at: i64,
 }
+
+/// Status of a pipeline execution.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineExecutionStatus {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+}
+
+/// A running or completed pipeline execution.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineExecution {
+    pub id: String,
+    pub pipeline_id: String,
+    pub status: PipelineExecutionStatus,
+    pub initial_prompt: String,
+    pub project_path: String,
+    pub current_step_index: i32,
+    pub step_sessions: std::collections::HashMap<String, String>,
+    pub step_outputs: std::collections::HashMap<String, String>,
+    pub created_at: i64,
+    pub completed_at: Option<i64>,
+}
