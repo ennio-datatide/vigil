@@ -8,7 +8,6 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::config::Config;
@@ -68,14 +67,122 @@ impl AgentSpawner {
         let (work_dir, store) = self.prepare_session(session).await?;
 
         // Build and spawn the claude process.
-        let child = Self::spawn_claude_process(&work_dir, continue_session)?;
+        let child = Self::spawn_claude_process(&work_dir, &session.prompt, continue_session)?;
 
         // Wire I/O and monitor the process.
-        self.wire_process(child, &session_id, &session.prompt).await;
+        self.wire_process(child, &session_id).await;
 
         // Emit session spawned event.
         if let Ok(Some(updated)) = store.get(&session_id).await {
             let _ = self.event_bus.emit(AppEvent::SessionSpawned { session: updated });
+        }
+
+        Ok(())
+    }
+
+    /// Spawn an interactive agent session for a pipeline step.
+    ///
+    /// Unlike [`spawn_interactive()`](Self::spawn_interactive), this uses
+    /// interactive mode (no `-p` flag) with real stdin piping so the terminal
+    /// WebSocket can send user input. No worktree is created — the session
+    /// runs directly in the project directory.
+    pub(crate) async fn spawn_interactive_pipeline_step(
+        &self,
+        session: &Session,
+        prompt: &str,
+    ) -> anyhow::Result<()> {
+        let session_id = session.id.clone();
+        let work_dir = session.project_path.clone();
+
+        // Install hooks.
+        crate::hooks::installer::HookInstaller::install(
+            Path::new(&work_dir),
+            &session_id,
+            self.config.server_port,
+        )?;
+
+        // Capture git metadata.
+        let git_metadata = Self::capture_git_metadata(&work_dir);
+
+        // Update session to running in DB.
+        let store = SessionStore::new(Arc::clone(&self.db));
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        store
+            .update_running(&session_id, None, now_ms, git_metadata.as_ref())
+            .await?;
+
+        // Spawn claude in interactive mode (no -p flag).
+        let mut child = Command::new("claude")
+            .args(["--dangerously-skip-permissions"])
+            .current_dir(&work_dir)
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // Take ownership of child I/O handles.
+        let child_stdin = child.stdin.take().expect("stdin was piped");
+        let child_stdout = child.stdout.take().expect("stdout was piped");
+        let child_stderr = child.stderr.take().expect("stderr was piped");
+
+        let alive = Arc::new(AtomicBool::new(true));
+        let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+
+        self.pty_manager
+            .register(
+                &session_id,
+                PtyHandle {
+                    stdin_tx,
+                    alive: Arc::clone(&alive),
+                },
+            )
+            .await;
+        self.output_manager.ensure_buffer(&session_id).await;
+
+        // Spawn stdin writer: sends prompt first, then forwards WebSocket input.
+        let prompt_bytes = format!("{prompt}\n");
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let mut stdin_writer = tokio::io::BufWriter::new(child_stdin);
+
+            // Send the initial prompt.
+            if let Err(e) = stdin_writer.write_all(prompt_bytes.as_bytes()).await {
+                tracing::error!(error = %e, "failed to write prompt to stdin");
+                return;
+            }
+            let _ = stdin_writer.flush().await;
+
+            // Forward WebSocket input to stdin.
+            while let Some(data) = stdin_rx.recv().await {
+                if stdin_writer.write_all(&data).await.is_err() {
+                    break;
+                }
+                let _ = stdin_writer.flush().await;
+            }
+        });
+
+        // Read stdout → output manager.
+        Self::spawn_output_reader(child_stdout, &session_id, Arc::clone(&self.output_manager));
+
+        // Read stderr → output manager.
+        Self::spawn_output_reader(child_stderr, &session_id, Arc::clone(&self.output_manager));
+
+        // Monitor process exit.
+        Self::spawn_exit_monitor(
+            child,
+            &session_id,
+            Arc::clone(&alive),
+            Arc::clone(&self.db),
+            Arc::clone(&self.event_bus),
+            Arc::clone(&self.pty_manager),
+        );
+
+        // Emit session spawned event.
+        if let Ok(Some(updated)) = store.get(&session_id).await {
+            let _ = self.event_bus.emit(AppEvent::SessionSpawned {
+                session: updated,
+            });
         }
 
         Ok(())
@@ -125,16 +232,31 @@ impl AgentSpawner {
     }
 
     /// Build and spawn the `claude` CLI as a child process with piped I/O.
-    fn spawn_claude_process(work_dir: &str, continue_session: bool) -> anyhow::Result<Child> {
-        let mut args: Vec<&str> = vec!["--verbose", "--dangerously-skip-permissions"];
+    ///
+    /// Uses `-p` (print mode) so the process runs the prompt and exits
+    /// when done, instead of sitting in interactive mode forever.
+    fn spawn_claude_process(
+        work_dir: &str,
+        prompt: &str,
+        continue_session: bool,
+    ) -> anyhow::Result<Child> {
+        let mut args: Vec<String> = vec![
+            "-p".to_string(),
+            prompt.to_string(),
+            "--verbose".to_string(),
+            "--dangerously-skip-permissions".to_string(),
+        ];
         if continue_session {
-            args.push("--continue");
+            args.push("--continue".to_string());
         }
 
         let child = Command::new("claude")
             .args(&args)
             .current_dir(work_dir)
-            .stdin(Stdio::piped())
+            // Clear CLAUDECODE so the worker doesn't think it's nested
+            // inside another Claude Code session.
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -142,54 +264,27 @@ impl AgentSpawner {
         Ok(child)
     }
 
-    /// Register PTY handle, wire stdin/stdout/stderr, send prompt, and
-    /// spawn the exit-monitoring task.
-    async fn wire_process(&self, mut child: Child, session_id: &str, prompt: &str) {
-        let child_stdin = child.stdin.take().expect("stdin was piped");
+    /// Register PTY handle, wire stdout/stderr, and spawn the exit-monitoring
+    /// task. Stdin is null since we use `-p` mode.
+    async fn wire_process(&self, mut child: Child, session_id: &str) {
         let child_stdout = child.stdout.take().expect("stdout was piped");
         let child_stderr = child.stderr.take().expect("stderr was piped");
 
-        // Set up PTY handle.
+        // Set up PTY handle (no stdin channel needed for -p mode, but we
+        // keep the registration so the terminal UI shows alive status).
         let alive = Arc::new(AtomicBool::new(true));
-        let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+        let (stdin_tx, _stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
 
         self.pty_manager
             .register(session_id, PtyHandle { stdin_tx, alive: Arc::clone(&alive) })
             .await;
         self.output_manager.ensure_buffer(session_id).await;
 
-        // Forward stdin_rx -> child stdin.
-        let stdin_alive = Arc::clone(&alive);
-        tokio::spawn(async move {
-            use tokio::io::AsyncWriteExt;
-            let mut writer = child_stdin;
-            while let Some(data) = stdin_rx.recv().await {
-                if !stdin_alive.load(Ordering::Relaxed) {
-                    break;
-                }
-                if writer.write_all(&data).await.is_err() {
-                    break;
-                }
-                let _ = writer.flush().await;
-            }
-        });
-
-        // Read stdout -> output manager.
+        // Read stdout -> output manager (chunk-based, not line-based).
         Self::spawn_output_reader(child_stdout, session_id, Arc::clone(&self.output_manager));
 
         // Read stderr -> output manager.
         Self::spawn_output_reader(child_stderr, session_id, Arc::clone(&self.output_manager));
-
-        // Send the prompt after a brief delay.
-        let prompt_owned = prompt.to_owned();
-        let pty_mgr = Arc::clone(&self.pty_manager);
-        let sid = session_id.to_owned();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let mut data = prompt_owned.into_bytes();
-            data.push(b'\n');
-            pty_mgr.write(&sid, &data).await;
-        });
 
         // Monitor process exit.
         Self::spawn_exit_monitor(
@@ -202,20 +297,25 @@ impl AgentSpawner {
         );
     }
 
-    /// Spawn a task that reads lines from an async reader and appends to the
-    /// output manager.
+    /// Spawn a task that reads chunks from an async reader and appends to the
+    /// output manager. Uses raw byte reads instead of line-based buffering so
+    /// streaming output (ANSI sequences, progress) appears immediately.
     fn spawn_output_reader<R>(reader: R, session_id: &str, output_manager: Arc<OutputManager>)
     where
         R: tokio::io::AsyncRead + Unpin + Send + 'static,
     {
         let sid = session_id.to_owned();
         tokio::spawn(async move {
-            let buf_reader = BufReader::new(reader);
-            let mut lines = buf_reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let mut data = line.into_bytes();
-                data.push(b'\n');
-                output_manager.append(&sid, &data).await;
+            use tokio::io::AsyncReadExt;
+            let mut reader = reader;
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        output_manager.append(&sid, &buf[..n]).await;
+                    }
+                }
             }
         });
     }
