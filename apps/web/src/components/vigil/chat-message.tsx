@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { VigilMessage } from '@/lib/types';
 import { ActaCard } from './cards/acta-card';
 import { BlockerCard } from './cards/blocker-card';
@@ -24,6 +25,26 @@ export function ChatMessage({ message }: ChatMessageProps) {
           }`}
         >
           <p className="whitespace-pre-wrap">{message.content}</p>
+
+          {message.sessionId && (
+            <Link
+              href={`/dashboard/sessions/${message.sessionId}`}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              View session
+            </Link>
+          )}
+
+          {message.executionId && (
+            <Link
+              href={`/dashboard/executions/${message.executionId}`}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              View pipeline
+            </Link>
+          )}
         </div>
 
         {message.embeddedCards?.map((card, i) => {

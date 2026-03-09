@@ -31,6 +31,7 @@ export interface VigilMessage {
   role: 'user' | 'vigil';
   content: string;
   sessionId?: string;
+  executionId?: string;
   embeddedCards: EmbeddedCard[] | null;
   createdAt: number;
 }
