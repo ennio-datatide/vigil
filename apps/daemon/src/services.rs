@@ -12,6 +12,7 @@ pub(crate) mod memory_store;
 pub(crate) mod notification_store;
 pub(crate) mod notifier;
 pub(crate) mod pipeline_execution_store;
+pub(crate) mod pipeline_runner;
 pub(crate) mod pipeline_store;
 pub(crate) mod project_store;
 pub(crate) mod recovery;

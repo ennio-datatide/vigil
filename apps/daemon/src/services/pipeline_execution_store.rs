@@ -21,6 +21,7 @@ pub(crate) struct PipelineExecutionStore {
     db: Arc<SqliteDb>,
 }
 
+#[allow(dead_code)] // Methods used by pipeline runner and REST endpoints (Task 6+).
 impl PipelineExecutionStore {
     /// Create a new store backed by the given database.
     #[must_use]

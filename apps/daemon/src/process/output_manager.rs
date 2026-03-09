@@ -115,10 +115,10 @@ impl OutputManager {
     /// over the in-memory buffer (may be truncated or cleared).
     pub(crate) fn get_full_output(&self, session_id: &str) -> Option<Vec<u8>> {
         // Prefer disk log — it's never truncated during a session.
-        if let Some(disk) = self.read_log(session_id) {
-            if !disk.is_empty() {
-                return Some(disk);
-            }
+        if let Some(disk) = self.read_log(session_id)
+            && !disk.is_empty()
+        {
+            return Some(disk);
         }
         None
     }
