@@ -30,6 +30,7 @@ export interface VigilMessage {
   id: number;
   role: 'user' | 'vigil';
   content: string;
+  sessionId?: string;
   embeddedCards: EmbeddedCard[] | null;
   createdAt: number;
 }
@@ -44,6 +45,21 @@ export interface EmbeddedCard {
   summary?: string;
   childCount?: number;
   acta?: string;
+}
+
+// Pipeline execution types
+
+export interface PipelineExecution {
+  id: string;
+  pipelineId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  initialPrompt: string;
+  projectPath: string;
+  currentStepIndex: number;
+  stepSessions: Record<string, string>;
+  stepOutputs: Record<string, string>;
+  createdAt: number;
+  completedAt: number | null;
 }
 
 // Extended WebSocket message types
