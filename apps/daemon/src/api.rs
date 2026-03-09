@@ -9,6 +9,7 @@ pub mod health;
 pub(crate) mod memory;
 pub mod middleware;
 pub(crate) mod notifications;
+pub(crate) mod pipeline_executions;
 pub(crate) mod pipelines;
 pub(crate) mod projects;
 pub(crate) mod sessions;
@@ -53,6 +54,9 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/pipelines/{id}", get(pipelines::get_pipeline))
         .route("/pipelines/{id}", put(pipelines::update_pipeline))
         .route("/pipelines/{id}", delete(pipelines::delete_pipeline))
+        .route("/pipelines/{id}/execute", post(pipeline_executions::execute_pipeline))
+        .route("/executions", get(pipeline_executions::list_executions))
+        .route("/executions/{id}", get(pipeline_executions::get_execution))
         .route(
             "/settings/telegram",
             get(settings::get_telegram).put(settings::put_telegram),
@@ -66,7 +70,7 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/vigil/status", get(vigil::get_status))
         .route("/vigil/chat", post(vigil::chat))
         .route("/vigil/acta", get(vigil::get_acta).put(vigil::update_acta))
-        .route("/vigil/history", get(vigil::get_history))
+        .route("/vigil/history", get(vigil::get_history).delete(vigil::clear_history))
         .layer(axum::middleware::from_fn_with_state(
             deps.clone(),
             middleware::auth,
