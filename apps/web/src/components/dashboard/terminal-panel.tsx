@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRef, useState } from 'react';
 import { useRestartSession } from '@/lib/api';
 import { useTerminal } from '@/lib/hooks/use-terminal';
+import { useSessionStore } from '@/lib/stores/session-store';
+import { useTerminalStore } from '@/lib/stores/terminal-store';
 import { useToast } from '@/lib/stores/toast-store';
 
 import '@xterm/xterm/css/xterm.css';
@@ -15,6 +17,8 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
   const [inputOpen, setInputOpen] = useState(false);
   const restartMutation = useRestartSession();
   const toast = useToast();
+  const { panelMode, toggleFullscreen, closePanel, setPanelMode } = useTerminalStore();
+  const session = useSessionStore((s) => s.sessions[sessionId]);
 
   const handleMobileSend = () => {
     if (!mobileInput.trim()) return;
@@ -48,17 +52,88 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
           <span className="text-xs text-text-muted">
             {!connected ? 'Connecting...' : !ptyAlive ? 'Read-only' : 'Connected'}
           </span>
+          {session && (
+            <span className="ml-2 max-w-[200px] truncate text-xs text-text-muted/70">
+              {session.role || session.prompt?.slice(0, 40)}
+            </span>
+          )}
         </span>
-        {connected && !ptyAlive && (
+        <div className="flex items-center gap-1">
+          {connected && !ptyAlive && (
+            <button
+              type="button"
+              onClick={handleRestart}
+              disabled={restartMutation.isPending}
+              className="btn-press rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+            >
+              {restartMutation.isPending ? 'Restarting...' : 'Restart'}
+            </button>
+          )}
+          {panelMode === 'fullscreen' ? (
+            <button
+              type="button"
+              onClick={() => setPanelMode('panel')}
+              className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+              title="Minimize"
+            >
+              <svg
+                className="w-4 h-4 text-text-muted"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+              title="Maximize"
+            >
+              <svg
+                className="w-4 h-4 text-text-muted"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
-            onClick={handleRestart}
-            disabled={restartMutation.isPending}
-            className="btn-press rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+            onClick={closePanel}
+            className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+            title="Close"
           >
-            {restartMutation.isPending ? 'Restarting...' : 'Restart'}
+            <svg
+              className="w-4 h-4 text-text-muted"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Terminal body */}
