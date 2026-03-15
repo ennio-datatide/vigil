@@ -4,9 +4,8 @@
 //! global overseer, retrieving a project acta (briefing), and browsing
 //! chat history.
 
-use std::fmt::Write as _;
-
 use axum::extract::{Json, Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -61,15 +60,12 @@ pub(crate) async fn get_status(
 /// Result of processing a Vigil chat message.
 pub(crate) struct ChatResult {
     pub response: String,
-    pub session_id: Option<String>,
-    pub hit_max_turns: bool,
-    pub error: bool,
 }
 
 /// Core Vigil chat logic — shared between the HTTP handler and the Telegram poller.
 ///
-/// Persists messages, builds context, invokes Claude CLI, and returns the result.
-#[allow(clippy::too_many_lines)]
+/// Persists the user message, sends it to the persistent Vigil PTY via
+/// [`VigilManager::send_message()`], and persists the response.
 pub(crate) async fn process_chat(
     deps: &AppDeps,
     message: &str,
@@ -94,113 +90,16 @@ pub(crate) async fn process_chat(
         tracing::debug!(project_path = %pp, "vigil activated for project");
     }
 
-    // Load recent chat history for context (last 6 non-error messages).
-    let all_messages = deps
-        .vigil_chat_store
-        .list_messages(100, 0)
-        .await
-        .unwrap_or_default();
-    let recent: Vec<_> = all_messages
-        .iter()
-        .rev()
-        .filter(|m| !is_error_message(m))
-        .take(6)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-
-    tracing::debug!(
-        total_messages = all_messages.len(),
-        context_messages = recent.len(),
-        "loaded chat history for context"
-    );
-
-    // Build the conversation context from recent history.
-    let mut context = String::new();
-    for msg in &recent {
-        let role = if msg.role == "user" { "Human" } else { "Vigil" };
-        let _ = write!(context, "{role}: {}\n\n", msg.content);
-    }
-
-    // Build the full prompt — just the user message with minimal context.
-    let prompt = if context.is_empty() {
-        message.to_owned()
-    } else {
-        format!(
-            "<conversation_history>\n{context}</conversation_history>\n\n{message}",
-        )
-    };
-
-    tracing::debug!(prompt_len = prompt.len(), "built prompt with context");
-
-    // Ensure Vigil config files exist.
-    let vigil_dir = deps.config.praefectus_home.join("vigil");
-    std::fs::create_dir_all(&vigil_dir).ok();
-
-    let mcp_config_path = vigil_dir.join("mcp-config.json");
-    let daemon_url = format!("http://localhost:{}", deps.config.server_port);
-    if let Err(e) = crate::process::claude_cli::write_mcp_config(&mcp_config_path, &daemon_url) {
-        tracing::error!(error = %e, "failed to write MCP config");
-    }
-
-    // Always write the strategy prompt so the compiled-in version wins
-    // over any stale copy on disk.
-    let strategy_path = vigil_dir.join("strategy.md");
-    let strategy_content = include_str!("../../prompts/vigil-strategy.md");
-    std::fs::write(&strategy_path, strategy_content).ok();
-
-    tracing::info!("invoking claude CLI for vigil response...");
-
-    // Serialise CLI calls — only one `claude -p` at a time.
-    let _guard = deps.vigil_cli_mutex.lock().await;
-
-    // Invoke Claude CLI.
-    let result = match crate::process::claude_cli::invoke_vigil(
-        &prompt,
-        &strategy_path,
-        &mcp_config_path,
-        10,
-    )
-    .await
-    {
+    // Send to Vigil via persistent PTY.
+    let response = match deps.vigil_manager.send_message(message).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::error!(error = %e, "vigil claude CLI call failed");
-            return Ok(ChatResult {
-                response: format!("Vigil encountered an error: {e}"),
-                session_id: None,
-                hit_max_turns: false,
-                error: true,
-            });
+            tracing::error!(error = %e, "vigil send_message failed");
+            return Err(e);
         }
     };
 
-    tracing::info!(
-        response_len = result.response.len(),
-        session_id = ?result.session_id,
-        hit_max_turns = result.hit_max_turns,
-        "claude CLI responded"
-    );
-
-    // Build response text — append session link if max turns was hit.
-    let response = if result.hit_max_turns {
-        let session_note = if let Some(ref sid) = result.session_id {
-            format!(
-                "\n\n---\n*Reached max turns limit. Resume this session:*\n```\nclaude --resume {sid}\n```",
-            )
-        } else {
-            "\n\n---\n*Reached max turns limit. Consider increasing max turns or breaking the task into smaller steps.*".to_string()
-        };
-
-        if result.response.is_empty() {
-            format!("Vigil ran out of turns before completing the response.{session_note}")
-        } else {
-            format!("{}{session_note}", result.response)
-        }
-    } else {
-        result.response
-    };
+    tracing::info!(response_len = response.len(), "vigil responded");
 
     // Save vigil response.
     deps.vigil_chat_store
@@ -209,12 +108,7 @@ pub(crate) async fn process_chat(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     tracing::debug!("vigil response persisted");
 
-    Ok(ChatResult {
-        session_id: result.session_id,
-        hit_max_turns: result.hit_max_turns,
-        error: false,
-        response,
-    })
+    Ok(ChatResult { response })
 }
 
 /// `POST /api/vigil/chat` — chat with the Vigil overseer.
@@ -225,25 +119,31 @@ pub(crate) async fn process_chat(
 pub(crate) async fn chat(
     State(deps): State<AppDeps>,
     Json(input): Json<ChatInput>,
-) -> Result<impl IntoResponse> {
-    let result = process_chat(&deps, &input.message, input.project_path.as_deref())
-        .await
-        .map_err(crate::error::Error::Other)?;
-
-    if result.error {
-        return Ok(Json(json!({
-            "response": result.response,
-            "sessionId": serde_json::Value::Null,
-            "hitMaxTurns": false,
-            "error": true,
-        })));
+) -> impl IntoResponse {
+    match process_chat(&deps, &input.message, input.project_path.as_deref()).await {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(json!({
+                "response": result.response,
+                "sessionId": serde_json::Value::Null,
+                "hitMaxTurns": false,
+            })),
+        )
+            .into_response(),
+        Err(e) if e.to_string().contains("processing another message") => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "response": format!("Vigil encountered an error: {e}"),
+                "error": true,
+            })),
+        )
+            .into_response(),
     }
-
-    Ok(Json(json!({
-        "response": result.response,
-        "sessionId": result.session_id,
-        "hitMaxTurns": result.hit_max_turns,
-    })))
 }
 
 /// Request body for `PUT /api/vigil/acta`.
@@ -296,19 +196,6 @@ pub(crate) async fn clear_history(State(deps): State<AppDeps>) -> Result<impl In
     Ok(Json(json!({ "ok": true })))
 }
 
-/// Returns `true` when the message looks like a Vigil error that should be
-/// excluded from conversation context sent to Claude.
-fn is_error_message(msg: &crate::services::vigil_chat::VigilMessage) -> bool {
-    if msg.role != "vigil" {
-        return false;
-    }
-    let c = &msg.content;
-    c.starts_with("Vigil encountered an error:")
-        || c.starts_with("Error:")
-        || c.starts_with("Failed to reach Vigil")
-        || c.contains("timed out after")
-        || c.contains("Reached max turns")
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -407,79 +294,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_with_project_path_returns_response() {
+    async fn chat_returns_error_when_vigil_pty_not_started() {
         let (app, _dir) = test_app().await;
 
+        // Without a running Vigil PTY, chat should return 500.
         let body = serde_json::json!({
-            "projectPath": "/tmp/chat-test",
-            "message": "What is the project status?"
+            "message": "Hello Vigil"
         });
 
         let resp = app.oneshot(post_json("/api/vigil/chat", &body)).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let json = json_body(resp).await;
-        assert!(
-            json["response"].as_str().is_some(),
-            "should have a response string"
-        );
+        assert!(json["error"].as_bool().unwrap_or(false));
     }
 
     #[tokio::test]
-    async fn chat_activates_vigil() {
+    async fn chat_persists_user_message_even_on_error() {
         let (app, _dir) = test_app().await;
 
-        // Chat with a vigil to activate it.
-        let body = serde_json::json!({
-            "projectPath": "/tmp/activate-test",
-            "message": "hello"
-        });
+        // Chat will fail (no PTY), but user message should be persisted.
+        let body = serde_json::json!({ "message": "Hello from test" });
         let _ = app
             .clone()
             .oneshot(post_json("/api/vigil/chat", &body))
             .await
             .unwrap();
 
-        // Now status should show the project as active.
-        let resp = app.oneshot(get("/api/vigil/status")).await.unwrap();
-        let json = json_body(resp).await;
-        let projects = json["activeProjects"].as_array().unwrap();
-        assert_eq!(projects.len(), 1);
-        assert_eq!(projects[0], "/tmp/activate-test");
-    }
-
-    #[tokio::test]
-    async fn chat_without_project_path() {
-        let (app, _dir) = test_app().await;
-
-        let body = serde_json::json!({
-            "message": "Hello Vigil"
-        });
-
-        let resp = app.oneshot(post_json("/api/vigil/chat", &body)).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let json = json_body(resp).await;
-        assert!(
-            json["response"].as_str().is_some(),
-            "should have a response string"
-        );
-    }
-
-    #[tokio::test]
-    async fn chat_history_persists() {
-        let (app, _dir) = test_app().await;
-
-        // Send a chat message.
-        let body = serde_json::json!({ "message": "Hello from test" });
-        let resp = app
-            .clone()
-            .oneshot(post_json("/api/vigil/chat", &body))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        // Retrieve history.
+        // Retrieve history — should have at least the user message.
         let resp = app
             .oneshot(get("/api/vigil/history"))
             .await
@@ -488,28 +330,34 @@ mod tests {
 
         let json = json_body(resp).await;
         let messages = json["messages"].as_array().expect("should be array");
-        assert_eq!(messages.len(), 2, "should have user + vigil messages");
+        assert!(
+            !messages.is_empty(),
+            "user message should be persisted even when Vigil PTY is unavailable"
+        );
         assert_eq!(messages[0]["role"], "user");
         assert_eq!(messages[0]["content"], "Hello from test");
-        assert_eq!(messages[1]["role"], "vigil");
     }
 
     #[tokio::test]
-    async fn history_with_pagination() {
+    async fn history_pagination_works() {
         let (app, _dir) = test_app().await;
 
-        // Send two chat messages to create 4 total messages (2 user + 2 vigil).
-        for msg in &["first", "second"] {
-            let body = serde_json::json!({ "message": msg });
-            let _ = app
-                .clone()
-                .oneshot(post_json("/api/vigil/chat", &body))
+        // Directly save messages via the store to test pagination without PTY.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config = crate::config::Config::for_testing(dir.path());
+        let deps = AppDeps::new(config).await.unwrap();
+
+        for i in 0..4 {
+            deps.vigil_chat_store
+                .save_message("user", &format!("msg {i}"), None)
                 .await
                 .unwrap();
         }
 
+        let router = api::router(deps);
+
         // Get with limit=2, offset=0.
-        let resp = app
+        let resp = router
             .clone()
             .oneshot(get("/api/vigil/history?limit=2&offset=0"))
             .await
@@ -520,7 +368,7 @@ mod tests {
         assert_eq!(messages.len(), 2);
 
         // Get with limit=2, offset=2.
-        let resp = app
+        let resp = router
             .oneshot(get("/api/vigil/history?limit=2&offset=2"))
             .await
             .unwrap();

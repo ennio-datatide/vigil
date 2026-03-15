@@ -22,6 +22,7 @@ mod e2e;
 pub use error::{Error, Result};
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -67,6 +68,14 @@ pub async fn run(port: u16) -> Result<()> {
     let telegram_poller = services::telegram_poller::TelegramPoller::new(&deps);
     let telegram_poller_handle = telegram_poller.start();
 
+    // Start persistent Vigil PTY session.
+    let vigil_manager = Arc::clone(&deps.vigil_manager);
+    let vigil_manager_handle = tokio::spawn(async move {
+        if let Err(e) = vigil_manager.start().await {
+            tracing::error!(error = %e, "Failed to start Vigil persistent PTY");
+        }
+    });
+
     // Handle ctrl+c by triggering the shutdown channel.
     let shutdown_tx = deps.shutdown_tx.clone();
     tokio::spawn(async move {
@@ -102,6 +111,7 @@ pub async fn run(port: u16) -> Result<()> {
     memory_decay_handle.abort();
     vigil_handle.abort();
     telegram_poller_handle.abort();
+    vigil_manager_handle.abort();
 
     tracing::info!("praefectus daemon stopped");
     Ok(())

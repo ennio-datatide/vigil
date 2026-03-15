@@ -77,10 +77,13 @@ export function VigilChat({ onSessionClick }: { onSessionClick?: () => void }) {
       };
       addMessage(vigilMessage);
     } catch (err) {
+      const isBusy = err instanceof Error && err.message.includes('503');
       const errorMessage = {
         id: Date.now() + 1,
         role: 'vigil' as const,
-        content: `Failed to reach Vigil. ${err instanceof Error ? err.message : 'Unknown error.'}`,
+        content: isBusy
+          ? "I'm currently processing another request. Please wait a moment."
+          : `Failed to reach Vigil. ${err instanceof Error ? err.message : 'Unknown error.'}`,
         embeddedCards: null,
         createdAt: Date.now(),
       };
