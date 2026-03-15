@@ -23,3 +23,4 @@ pub(crate) mod sub_session;
 pub(crate) mod telegram_poller;
 pub(crate) mod vigil;
 pub(crate) mod vigil_chat;
+pub(crate) mod vigil_manager;

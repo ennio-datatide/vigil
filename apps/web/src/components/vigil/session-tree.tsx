@@ -96,9 +96,9 @@ function SessionRow({ session, childrenMap, depth }: SessionRowProps) {
           {/* Status dot */}
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
 
-          {/* Prompt */}
+          {/* Prompt — show "Vigil Orchestrator" for the Vigil session */}
           <span className="min-w-0 flex-1 truncate text-[13px] text-white/70 group-hover:text-white/90">
-            {session.prompt}
+            {session.id === 'vigil' ? 'Vigil Orchestrator' : session.prompt}
           </span>
 
           {/* Duration */}
