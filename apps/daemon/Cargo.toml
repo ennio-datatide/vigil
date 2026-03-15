@@ -55,9 +55,6 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# Templating
-minijinja = "2.8"
-
 # Common types
 uuid = { version = "1.15", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -73,9 +70,7 @@ portable-pty = "0.8"
 
 # Utilities
 arc-swap = "1"
-moka = { version = "0.12", features = ["future"] }
 schemars = "1.2"
-rustc-hash = "2"
 fs-err = "3"
 dirs = "6.0"
 url = "2"
