@@ -1,14 +1,15 @@
 //! Agent process spawning and lifecycle management.
 //!
-//! Creates git worktrees, installs hooks, spawns the `claude` CLI as a child
-//! process with piped I/O, and handles process exit to update session status.
+//! Spawns the `claude` CLI inside a real OS PTY via `portable-pty`, wires
+//! output through the [`OutputManager`], and monitors process exit to update
+//! session status.
 
 use std::path::Path;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tokio::process::{Child, Command};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::db::models::{ExitReason, GitMetadata, Session, SessionStatus};
@@ -20,7 +21,6 @@ use crate::process::pty_manager::{PtyHandle, PtyManager};
 use crate::services::session_store::SessionStore;
 
 /// Spawns and manages `claude` CLI processes for sessions.
-#[allow(dead_code)] // Constructed by session manager (Task 1.13).
 pub(crate) struct AgentSpawner {
     config: Arc<Config>,
     db: Arc<SqliteDb>,
@@ -29,7 +29,6 @@ pub(crate) struct AgentSpawner {
     output_manager: Arc<OutputManager>,
 }
 
-#[allow(dead_code)] // Methods called by session manager (Task 1.13).
 impl AgentSpawner {
     /// Create a new spawner from the shared application dependencies.
     #[must_use]
@@ -43,14 +42,15 @@ impl AgentSpawner {
         }
     }
 
-    /// Spawn an interactive agent session.
+    /// Spawn an interactive agent session inside a real PTY.
     ///
     /// 1. Creates a git worktree (if the project is a git repo).
     /// 2. Installs Claude Code hooks into the working directory.
     /// 3. Captures git metadata (repo name, branch, commit, remote).
-    /// 4. Spawns `claude` as a child process with piped stdin/stdout/stderr.
+    /// 4. Spawns `claude` inside a PTY via `portable-pty`.
     /// 5. Wires output to [`OutputManager`] and registers a [`PtyHandle`].
-    /// 6. Monitors process exit and updates the session accordingly.
+    /// 6. Sends the initial prompt as PTY input.
+    /// 7. Monitors process exit and updates the session accordingly.
     ///
     /// # Errors
     ///
@@ -66,15 +66,78 @@ impl AgentSpawner {
         // Prepare working directory, hooks, and DB state.
         let (work_dir, store) = self.prepare_session(session).await?;
 
-        // Build and spawn the claude process.
-        let child = Self::spawn_claude_process(&work_dir, &session.prompt, continue_session)?;
+        // Spawn claude inside a real PTY.
+        let (master, child, reader, writer) =
+            match spawn_claude_pty(&work_dir, continue_session) {
+                Ok(result) => result,
+                Err(e) => {
+                    // PTY allocation failed — mark session as Failed.
+                    let store2 = SessionStore::new(Arc::clone(&self.db));
+                    let _ = store2
+                        .update_status(
+                            &session_id,
+                            SessionStatus::Failed,
+                            Some(ExitReason::Error),
+                            Some(chrono::Utc::now().timestamp_millis()),
+                        )
+                        .await;
+                    if let Ok(Some(updated)) = store2.get(&session_id).await {
+                        let _ = self.event_bus.emit(AppEvent::SessionUpdate {
+                            session: updated,
+                        });
+                    }
+                    return Err(e);
+                }
+            };
 
-        // Wire I/O and monitor the process.
-        self.wire_process(child, &session_id).await;
+        let alive = Arc::new(AtomicBool::new(true));
+
+        // Wire PTY I/O: reader → output manager, writer ← stdin channel.
+        let (stdin_tx, _reader_handle) = wire_pty_io(
+            &session_id,
+            reader,
+            writer,
+            Arc::clone(&self.output_manager),
+            Arc::clone(&alive),
+        );
+
+        // Ensure output buffer exists for this session.
+        self.output_manager.ensure_buffer(&session_id).await;
+
+        // Register PTY handle.
+        self.pty_manager
+            .register(
+                &session_id,
+                PtyHandle {
+                    stdin_tx: stdin_tx.clone(),
+                    master,
+                    child,
+                    alive: Arc::clone(&alive),
+                },
+            )
+            .await;
+
+        // Send initial prompt as input (like a human typing it).
+        let prompt = format!("{}\n", session.prompt);
+        stdin_tx
+            .send(prompt.into_bytes())
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to send initial prompt"))?;
+
+        // Spawn exit monitor — polls alive flag set by reader thread on EOF.
+        Self::spawn_exit_monitor(
+            &session_id,
+            alive,
+            Arc::clone(&self.db),
+            Arc::clone(&self.event_bus),
+            Arc::clone(&self.pty_manager),
+        );
 
         // Emit session spawned event.
         if let Ok(Some(updated)) = store.get(&session_id).await {
-            let _ = self.event_bus.emit(AppEvent::SessionSpawned { session: updated });
+            let _ = self.event_bus.emit(AppEvent::SessionSpawned {
+                session: updated,
+            });
         }
 
         Ok(())
@@ -82,10 +145,9 @@ impl AgentSpawner {
 
     /// Spawn an interactive agent session for a pipeline step.
     ///
-    /// Unlike [`spawn_interactive()`](Self::spawn_interactive), this uses
-    /// interactive mode (no `-p` flag) with real stdin piping so the terminal
-    /// WebSocket can send user input. No worktree is created — the session
-    /// runs directly in the project directory.
+    /// Unlike [`spawn_interactive()`](Self::spawn_interactive), this skips
+    /// worktree creation and runs directly in the project directory with a
+    /// custom prompt.
     pub(crate) async fn spawn_interactive_pipeline_step(
         &self,
         session: &Session,
@@ -111,68 +173,47 @@ impl AgentSpawner {
             .update_running(&session_id, None, now_ms, git_metadata.as_ref())
             .await?;
 
-        // Spawn claude in interactive mode (no -p flag).
-        let mut child = Command::new("claude")
-            .args(["--dangerously-skip-permissions"])
-            .current_dir(&work_dir)
-            .env_remove("CLAUDECODE")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        // Take ownership of child I/O handles.
-        let child_stdin = child.stdin.take().expect("stdin was piped");
-        let child_stdout = child.stdout.take().expect("stdout was piped");
-        let child_stderr = child.stderr.take().expect("stderr was piped");
+        // Spawn claude inside a real PTY (no worktree, runs in project dir).
+        let (master, child, reader, writer) = spawn_claude_pty(&work_dir, false)?;
 
         let alive = Arc::new(AtomicBool::new(true));
-        let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
 
+        // Wire PTY I/O.
+        let (stdin_tx, _reader_handle) = wire_pty_io(
+            &session_id,
+            reader,
+            writer,
+            Arc::clone(&self.output_manager),
+            Arc::clone(&alive),
+        );
+
+        // Ensure output buffer exists.
+        self.output_manager.ensure_buffer(&session_id).await;
+
+        // Register PTY handle.
         self.pty_manager
             .register(
                 &session_id,
                 PtyHandle {
-                    stdin_tx,
+                    stdin_tx: stdin_tx.clone(),
+                    master,
+                    child,
                     alive: Arc::clone(&alive),
                 },
             )
             .await;
-        self.output_manager.ensure_buffer(&session_id).await;
 
-        // Spawn stdin writer: sends prompt first, then forwards WebSocket input.
+        // Send the pipeline prompt as input.
         let prompt_bytes = format!("{prompt}\n");
-        tokio::spawn(async move {
-            use tokio::io::AsyncWriteExt;
-            let mut stdin_writer = tokio::io::BufWriter::new(child_stdin);
+        stdin_tx
+            .send(prompt_bytes.into_bytes())
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to send pipeline prompt"))?;
 
-            // Send the initial prompt.
-            if let Err(e) = stdin_writer.write_all(prompt_bytes.as_bytes()).await {
-                tracing::error!(error = %e, "failed to write prompt to stdin");
-                return;
-            }
-            let _ = stdin_writer.flush().await;
-
-            // Forward WebSocket input to stdin.
-            while let Some(data) = stdin_rx.recv().await {
-                if stdin_writer.write_all(&data).await.is_err() {
-                    break;
-                }
-                let _ = stdin_writer.flush().await;
-            }
-        });
-
-        // Read stdout → output manager.
-        Self::spawn_output_reader(child_stdout, &session_id, Arc::clone(&self.output_manager));
-
-        // Read stderr → output manager.
-        Self::spawn_output_reader(child_stderr, &session_id, Arc::clone(&self.output_manager));
-
-        // Monitor process exit.
+        // Spawn exit monitor.
         Self::spawn_exit_monitor(
-            child,
             &session_id,
-            Arc::clone(&alive),
+            alive,
             Arc::clone(&self.db),
             Arc::clone(&self.event_bus),
             Arc::clone(&self.pty_manager),
@@ -189,6 +230,7 @@ impl AgentSpawner {
     }
 
     /// Kill a running agent by terminating its process.
+    #[allow(dead_code)] // Available for direct agent termination.
     pub(crate) async fn kill(&self, session_id: &str) {
         self.pty_manager.kill(session_id).await;
         tracing::info!(session_id, "agent kill requested");
@@ -231,99 +273,9 @@ impl AgentSpawner {
         Ok((work_dir, store))
     }
 
-    /// Build and spawn the `claude` CLI as a child process with piped I/O.
-    ///
-    /// Uses `-p` (print mode) so the process runs the prompt and exits
-    /// when done, instead of sitting in interactive mode forever.
-    fn spawn_claude_process(
-        work_dir: &str,
-        prompt: &str,
-        continue_session: bool,
-    ) -> anyhow::Result<Child> {
-        let mut args: Vec<String> = vec![
-            "-p".to_string(),
-            prompt.to_string(),
-            "--verbose".to_string(),
-            "--dangerously-skip-permissions".to_string(),
-        ];
-        if continue_session {
-            args.push("--continue".to_string());
-        }
-
-        let child = Command::new("claude")
-            .args(&args)
-            .current_dir(work_dir)
-            // Clear CLAUDECODE so the worker doesn't think it's nested
-            // inside another Claude Code session.
-            .env_remove("CLAUDECODE")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        Ok(child)
-    }
-
-    /// Register PTY handle, wire stdout/stderr, and spawn the exit-monitoring
-    /// task. Stdin is null since we use `-p` mode.
-    async fn wire_process(&self, mut child: Child, session_id: &str) {
-        let child_stdout = child.stdout.take().expect("stdout was piped");
-        let child_stderr = child.stderr.take().expect("stderr was piped");
-
-        // Set up PTY handle (no stdin channel needed for -p mode, but we
-        // keep the registration so the terminal UI shows alive status).
-        let alive = Arc::new(AtomicBool::new(true));
-        let (stdin_tx, _stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
-
-        self.pty_manager
-            .register(session_id, PtyHandle { stdin_tx, alive: Arc::clone(&alive) })
-            .await;
-        self.output_manager.ensure_buffer(session_id).await;
-
-        // Read stdout -> output manager (chunk-based, not line-based).
-        Self::spawn_output_reader(child_stdout, session_id, Arc::clone(&self.output_manager));
-
-        // Read stderr -> output manager.
-        Self::spawn_output_reader(child_stderr, session_id, Arc::clone(&self.output_manager));
-
-        // Monitor process exit.
-        Self::spawn_exit_monitor(
-            child,
-            session_id,
-            Arc::clone(&alive),
-            Arc::clone(&self.db),
-            Arc::clone(&self.event_bus),
-            Arc::clone(&self.pty_manager),
-        );
-    }
-
-    /// Spawn a task that reads chunks from an async reader and appends to the
-    /// output manager. Uses raw byte reads instead of line-based buffering so
-    /// streaming output (ANSI sequences, progress) appears immediately.
-    fn spawn_output_reader<R>(reader: R, session_id: &str, output_manager: Arc<OutputManager>)
-    where
-        R: tokio::io::AsyncRead + Unpin + Send + 'static,
-    {
-        let sid = session_id.to_owned();
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut reader = reader;
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        output_manager.append(&sid, &buf[..n]).await;
-                    }
-                }
-            }
-        });
-    }
-
-    /// Spawn a task that waits for the child process to exit and updates
-    /// the session status in the database.
+    /// Spawn a task that polls the `alive` flag (set by the reader thread on
+    /// EOF) and updates session status when the child exits.
     fn spawn_exit_monitor(
-        mut child: Child,
         session_id: &str,
         alive: Arc<AtomicBool>,
         db: Arc<SqliteDb>,
@@ -332,23 +284,40 @@ impl AgentSpawner {
     ) {
         let sid = session_id.to_owned();
         tokio::spawn(async move {
-            let exit_status = child.wait().await;
-            alive.store(false, Ordering::Relaxed);
-
-            let (status, exit_reason) = match exit_status {
-                Ok(s) if s.success() => (SessionStatus::Completed, ExitReason::Completed),
-                _ => (SessionStatus::Failed, ExitReason::Error),
-            };
-
-            let ended_at = chrono::Utc::now().timestamp_millis();
-            let store = SessionStore::new(db);
-
-            match store.update_status(&sid, status, Some(exit_reason), Some(ended_at)).await {
-                Ok(updated) => {
-                    let _ = event_bus.emit(AppEvent::SessionUpdate { session: updated });
+            // Wait for alive=false (set by reader thread on EOF, or by kill()).
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                if !alive.load(Ordering::Relaxed) {
+                    break;
                 }
-                Err(e) => {
-                    tracing::error!(session_id = %sid, error = %e, "failed to update session on exit");
+            }
+
+            let store = SessionStore::new(db);
+            if let Ok(Some(session)) = store.get(&sid).await
+                && (session.status == SessionStatus::Running
+                    || session.status == SessionStatus::NeedsInput)
+            {
+                let ended_at = chrono::Utc::now().timestamp_millis();
+                match store
+                    .update_status(
+                        &sid,
+                        SessionStatus::Completed,
+                        Some(ExitReason::Completed),
+                        Some(ended_at),
+                    )
+                    .await
+                {
+                    Ok(updated) => {
+                        let _ =
+                            event_bus.emit(AppEvent::SessionUpdate { session: updated });
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            session_id = %sid,
+                            error = %e,
+                            "failed to update session on exit"
+                        );
+                    }
                 }
             }
 
@@ -420,6 +389,122 @@ impl AgentSpawner {
 }
 
 // ---------------------------------------------------------------------------
+// PTY spawning and I/O wiring
+// ---------------------------------------------------------------------------
+
+/// Result of PTY allocation: (master, child, reader, writer).
+type PtySpawnResult = (
+    Box<dyn portable_pty::MasterPty + Send>,
+    Box<dyn portable_pty::Child + Send + Sync>,
+    Box<dyn std::io::Read + Send>,
+    Box<dyn std::io::Write + Send>,
+);
+
+/// Spawn `claude` inside a real PTY. Returns (master, child, reader, writer).
+fn spawn_claude_pty(
+    work_dir: &str,
+    continue_session: bool,
+) -> anyhow::Result<PtySpawnResult> {
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| anyhow::anyhow!("PTY allocation failed: {e}"))?;
+
+    let mut cmd = CommandBuilder::new("claude");
+    cmd.cwd(work_dir);
+    cmd.env("TERM", "xterm-256color");
+    // Prevent nested Claude Code detection (both env var forms).
+    cmd.env_remove("CLAUDE_CODE");
+    cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
+    cmd.env_remove("CLAUDECODE");
+
+    if continue_session {
+        cmd.arg("--continue");
+    }
+    // --verbose enables hook events that Vigil relies on for structured state tracking.
+    cmd.arg("--verbose");
+    cmd.arg("--dangerously-skip-permissions");
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| anyhow::anyhow!("Failed to spawn claude in PTY: {e}"))?;
+
+    // Drop slave immediately — prevents EOF issues when child exits.
+    drop(pair.slave);
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| anyhow::anyhow!("Failed to clone PTY reader: {e}"))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| anyhow::anyhow!("Failed to take PTY writer: {e}"))?;
+
+    Ok((pair.master, child, reader, writer))
+}
+
+/// Wire PTY I/O: reader -> `OutputManager`, writer <- `stdin_tx` channel.
+/// Sets `alive` to false when reader detects EOF (child exited).
+fn wire_pty_io(
+    session_id: &str,
+    reader: Box<dyn std::io::Read + Send>,
+    writer: Box<dyn std::io::Write + Send>,
+    output_manager: Arc<OutputManager>,
+    alive: Arc<AtomicBool>,
+) -> (mpsc::Sender<Vec<u8>>, tokio::task::JoinHandle<()>) {
+    let (stdin_tx, mut stdin_rx) = mpsc::channel::<Vec<u8>>(64);
+
+    // Writer drain thread (blocking).
+    tokio::task::spawn_blocking(move || {
+        let mut writer = writer;
+        while let Some(data) = stdin_rx.blocking_recv() {
+            use std::io::Write;
+            if writer.write_all(&data).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Reader thread (blocking) -> output manager.
+    // Sets alive=false on EOF so the exit monitor can detect child death.
+    let sid = session_id.to_string();
+    let reader_handle = tokio::task::spawn_blocking(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; 4096];
+        loop {
+            use std::io::Read;
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break, // EOF or error — child exited
+                Ok(n) => {
+                    let chunk = buf[..n].to_vec();
+                    // IMPORTANT: Cannot use handle.block_on() inside spawn_blocking
+                    // (panics with "Cannot block_on from within a tokio runtime").
+                    // Use handle.spawn() to dispatch async work non-blocking.
+                    if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                        let om = Arc::clone(&output_manager);
+                        let s = sid.clone();
+                        drop(rt.spawn(async move {
+                            om.append(&s, &chunk).await;
+                        }));
+                    }
+                }
+            }
+        }
+        // Signal that the child process has exited.
+        alive.store(false, Ordering::Relaxed);
+    });
+
+    (stdin_tx, reader_handle)
+}
+
+// ---------------------------------------------------------------------------
 // Status block generation
 // ---------------------------------------------------------------------------
 
@@ -483,7 +568,10 @@ mod tests {
         if let Some(meta) = meta {
             assert!(!meta.repo_name.is_empty(), "repo_name should not be empty");
             assert!(!meta.branch.is_empty(), "branch should not be empty");
-            assert!(meta.commit_hash.len() >= 40, "commit_hash should be a full SHA");
+            assert!(
+                meta.commit_hash.len() >= 40,
+                "commit_hash should be a full SHA"
+            );
         }
         // If not in a git repo (e.g., extracted tarball), None is acceptable.
     }
@@ -572,7 +660,10 @@ mod tests {
         assert!(block.is_some(), "should generate a status block");
 
         let text = block.unwrap();
-        assert!(text.contains("Active Children (2):"), "should show count of 2");
+        assert!(
+            text.contains("Active Children (2):"),
+            "should show count of 2"
+        );
         assert!(text.contains("[branch]"), "should show branch type");
         assert!(text.contains("[worker]"), "should show worker type");
         assert!(text.contains("abc12345"), "should show truncated id");
@@ -602,7 +693,10 @@ mod tests {
         let block = generate_children_status_block(&db, "parent-1")
             .await
             .unwrap();
-        assert!(block.is_none(), "should return None when all children are terminal");
+        assert!(
+            block.is_none(),
+            "should return None when all children are terminal"
+        );
     }
 
     #[tokio::test]
@@ -615,7 +709,10 @@ mod tests {
         let block = generate_children_status_block(&db, "parent-1")
             .await
             .unwrap();
-        assert!(block.is_none(), "should return None when no children exist");
+        assert!(
+            block.is_none(),
+            "should return None when no children exist"
+        );
     }
 
     #[tokio::test]
@@ -641,10 +738,108 @@ mod tests {
         let text = block.unwrap();
 
         // Truncated prompt should be 47 chars + "..." = 50 chars total.
-        assert!(text.contains("..."), "should truncate long prompts with ellipsis");
+        assert!(
+            text.contains("..."),
+            "should truncate long prompts with ellipsis"
+        );
         assert!(
             !text.contains(&"A".repeat(100)),
             "should not contain the full 100-char prompt"
         );
+    }
+}
+
+#[cfg(test)]
+mod pty_spawn_tests {
+    use super::*;
+    use crate::process::output_manager::OutputManager;
+    use crate::process::pty_manager::{PtyHandle, PtyManager};
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use tokio::time::{sleep, Duration};
+
+    #[tokio::test]
+    async fn test_pty_spawn_and_output_capture() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let output_manager = Arc::new(OutputManager::new(tmp.path().to_path_buf()));
+        let pty_manager = Arc::new(PtyManager::new());
+
+        let session_id = "test-pty-spawn";
+        let alive = Arc::new(AtomicBool::new(true));
+
+        // Allocate PTY
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open pty");
+
+        // Spawn /bin/sh
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.env("TERM", "xterm-256color");
+        let child = pair.slave.spawn_command(cmd).expect("spawn sh");
+        drop(pair.slave);
+
+        let reader = pair.master.try_clone_reader().expect("clone reader");
+        let writer = pair.master.take_writer().expect("take writer");
+
+        // Use wire_pty_io to set up I/O
+        let (stdin_tx, _reader_handle) = wire_pty_io(
+            session_id,
+            reader,
+            writer,
+            Arc::clone(&output_manager),
+            Arc::clone(&alive),
+        );
+
+        // Ensure output buffer exists
+        output_manager.ensure_buffer(session_id).await;
+
+        // Register PTY
+        pty_manager
+            .register(
+                session_id,
+                PtyHandle {
+                    stdin_tx: stdin_tx.clone(),
+                    master: pair.master,
+                    child,
+                    alive: Arc::clone(&alive),
+                },
+            )
+            .await;
+
+        // Send a command
+        pty_manager
+            .write(session_id, b"echo HELLO_PTY\n".to_vec())
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(300)).await;
+
+        // Check output manager captured it
+        let buf = output_manager.get_buffer(session_id).await;
+        let raw = buf.unwrap_or_default();
+        let output = String::from_utf8_lossy(&raw);
+        assert!(
+            output.contains("HELLO_PTY"),
+            "Expected output in buffer, got: {output}"
+        );
+
+        // Cleanup — send exit, verify alive flag gets set to false
+        pty_manager
+            .write(session_id, b"exit\n".to_vec())
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(500)).await;
+        assert!(
+            !alive.load(Ordering::Relaxed),
+            "alive should be false after exit"
+        );
+
+        pty_manager.kill(session_id).await;
     }
 }

@@ -1,31 +1,30 @@
 //! Tracks active PTY processes per session.
 //!
 //! Provides a handle-based API for writing to PTY stdin, checking liveness,
-//! and resizing terminals. Actual PTY spawning is done by the agent spawner
-//! (Task 1.12); this module only manages registered handles.
+//! resizing terminals, and killing child processes. Uses `portable-pty` for
+//! real OS PTY allocation with SIGWINCH support.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use portable_pty::MasterPty;
+use tokio::sync::{mpsc, Mutex};
 
 /// Handle to a running PTY process.
 pub(crate) struct PtyHandle {
-    /// Channel to write data to the PTY's stdin.
-    pub stdin_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    /// Channel to serialize writes to the PTY master.
+    pub stdin_tx: mpsc::Sender<Vec<u8>>,
+    /// Master PTY handle — used for resize operations.
+    pub master: Box<dyn MasterPty + Send>,
+    /// Child process handle — used for forceful kill.
+    pub child: Box<dyn portable_pty::Child + Send + Sync>,
     /// Whether the PTY process is still alive.
     pub alive: Arc<AtomicBool>,
 }
 
-/// Manages PTY handles for all active sessions.
-#[derive(Debug)]
-pub(crate) struct PtyManager {
-    ptys: RwLock<HashMap<String, PtyHandle>>,
-}
-
-// `PtyHandle` contains an `mpsc::Sender` which is `!Debug`, so we implement
-// `Debug` manually for `PtyManager` by skipping the inner map contents.
+// `PtyHandle` contains trait objects which are `!Debug`, so we implement
+// `Debug` manually by skipping the inner contents.
 impl std::fmt::Debug for PtyHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PtyHandle")
@@ -34,20 +33,25 @@ impl std::fmt::Debug for PtyHandle {
     }
 }
 
-#[allow(dead_code)] // Methods used by agent spawner (Task 1.12).
+/// Manages PTY handles for all active sessions.
+#[derive(Debug)]
+pub(crate) struct PtyManager {
+    ptys: Mutex<HashMap<String, PtyHandle>>,
+}
+
 impl PtyManager {
     /// Create a new, empty PTY manager.
     #[must_use]
     pub(crate) fn new() -> Self {
         Self {
-            ptys: RwLock::new(HashMap::new()),
+            ptys: Mutex::new(HashMap::new()),
         }
     }
 
     /// Register a PTY handle for a session.
     pub(crate) async fn register(&self, session_id: &str, handle: PtyHandle) {
         self.ptys
-            .write()
+            .lock()
             .await
             .insert(session_id.to_owned(), handle);
     }
@@ -55,109 +59,202 @@ impl PtyManager {
     /// Check if a PTY is alive for the given session.
     pub(crate) async fn is_alive(&self, session_id: &str) -> bool {
         self.ptys
-            .read()
+            .lock()
             .await
             .get(session_id)
             .is_some_and(|h| h.alive.load(Ordering::Relaxed))
     }
 
-    /// Write data to a PTY's stdin. Returns `true` if the write was sent.
-    pub(crate) async fn write(&self, session_id: &str, data: &[u8]) -> bool {
-        let ptys = self.ptys.read().await;
-        if let Some(handle) = ptys.get(session_id) {
-            handle.stdin_tx.send(data.to_vec()).await.is_ok()
-        } else {
-            false
-        }
+    /// Write bytes to the PTY via the serialized channel.
+    pub(crate) async fn write(&self, session_id: &str, data: Vec<u8>) -> anyhow::Result<()> {
+        let ptys = self.ptys.lock().await;
+        let handle = ptys
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("no pty for session"))?;
+        handle
+            .stdin_tx
+            .send(data)
+            .await
+            .map_err(|_| anyhow::anyhow!("stdin channel closed"))?;
+        Ok(())
     }
 
-    /// Resize a PTY (placeholder — actual OS-level resize wired in Task 1.12).
-    #[allow(clippy::unused_self)] // Will use self when wired to real PTY in Task 1.12.
-    pub(crate) fn resize(&self, session_id: &str, cols: u16, rows: u16) {
-        tracing::debug!(session_id, cols, rows, "PTY resize requested (placeholder)");
+    /// Resize the PTY. Delivers SIGWINCH to the child process.
+    pub(crate) async fn resize(
+        &self,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<()> {
+        let mut ptys = self.ptys.lock().await;
+        let handle = ptys
+            .get_mut(session_id)
+            .ok_or_else(|| anyhow::anyhow!("no pty for session"))?;
+        handle
+            .master
+            .resize(portable_pty::PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| anyhow::anyhow!("resize failed: {e}"))?;
+        Ok(())
+    }
+
+    /// Graceful kill: drop master (SIGHUP), then SIGKILL fallback.
+    pub(crate) async fn kill(&self, session_id: &str) {
+        let handle = self.ptys.lock().await.remove(session_id);
+        if let Some(mut handle) = handle {
+            handle.alive.store(false, Ordering::Relaxed);
+            // Drop master — sends SIGHUP to child process group.
+            drop(handle.master);
+            // Grace period then force kill.
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            let _ = handle.child.kill();
+        }
     }
 
     /// Remove a PTY handle for a session.
     pub(crate) async fn remove(&self, session_id: &str) {
-        self.ptys.write().await.remove(session_id);
-    }
-
-    /// Kill a PTY process by marking it dead and removing its handle.
-    pub(crate) async fn kill(&self, session_id: &str) {
-        if let Some(handle) = self.ptys.write().await.remove(session_id) {
-            handle.alive.store(false, Ordering::Relaxed);
-        }
+        self.ptys.lock().await.remove(session_id);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::io::Read;
+    use tokio::time::{sleep, Duration};
 
-    #[tokio::test]
-    async fn register_and_check_alive() {
-        let mgr = PtyManager::new();
-        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    /// Helper: spawn /bin/cat inside a real PTY and register it.
+    /// Returns (manager, session_id, reader) where reader is the master read handle.
+    async fn spawn_cat_pty() -> (PtyManager, String, Box<dyn Read + Send>) {
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open pty");
+
+        let cmd = CommandBuilder::new("/bin/cat");
+        let child = pair.slave.spawn_command(cmd).expect("spawn cat");
+        drop(pair.slave); // Drop slave so EOF works
+
+        let reader = pair.master.try_clone_reader().expect("clone reader");
+        let writer = pair.master.take_writer().expect("take writer");
+
+        let (stdin_tx, mut stdin_rx) = mpsc::channel::<Vec<u8>>(64);
         let alive = Arc::new(AtomicBool::new(true));
 
-        mgr.register(
-            "s1",
-            PtyHandle {
-                stdin_tx: tx,
-                alive: alive.clone(),
-            },
-        )
-        .await;
+        // Spawn writer drain thread (must use spawn_blocking for tokio context)
+        tokio::task::spawn_blocking(move || {
+            let mut writer = writer;
+            while let Some(data) = stdin_rx.blocking_recv() {
+                use std::io::Write;
+                if writer.write_all(&data).is_err() {
+                    break;
+                }
+            }
+        });
 
-        assert!(mgr.is_alive("s1").await);
+        let manager = PtyManager::new();
+        let session_id = "test-pty-session".to_string();
 
-        alive.store(false, Ordering::Relaxed);
-        assert!(!mgr.is_alive("s1").await);
+        manager
+            .register(
+                &session_id,
+                PtyHandle {
+                    stdin_tx,
+                    master: pair.master,
+                    child,
+                    alive: Arc::clone(&alive),
+                },
+            )
+            .await;
+
+        (manager, session_id, reader)
     }
 
     #[tokio::test]
-    async fn write_sends_data() {
-        let mgr = PtyManager::new();
-        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
-        let alive = Arc::new(AtomicBool::new(true));
+    async fn test_write_and_read_through_pty() {
+        let (manager, sid, mut reader) = spawn_cat_pty().await;
 
-        mgr.register(
-            "s1",
-            PtyHandle {
-                stdin_tx: tx,
-                alive,
-            },
-        )
-        .await;
+        manager.write(&sid, b"hello\n".to_vec()).await.unwrap();
 
-        assert!(mgr.write("s1", b"hello").await);
-        let received = rx.recv().await.unwrap();
-        assert_eq!(received, b"hello");
+        // Give cat time to echo
+        sleep(Duration::from_millis(100)).await;
+
+        let mut buf = [0u8; 256];
+        // cat echoes input back through the PTY
+        let n = reader.read(&mut buf).unwrap();
+        let output = String::from_utf8_lossy(&buf[..n]);
+        assert!(output.contains("hello"), "Expected echoed input, got: {output}");
+
+        manager.kill(&sid).await;
     }
 
     #[tokio::test]
-    async fn write_to_missing_session_returns_false() {
-        let mgr = PtyManager::new();
-        assert!(!mgr.write("missing", b"data").await);
+    async fn test_resize() {
+        let (manager, sid, _reader) = spawn_cat_pty().await;
+
+        // Should not panic or error
+        let result = manager.resize(&sid, 120, 40).await;
+        assert!(result.is_ok(), "Resize should succeed");
+
+        manager.kill(&sid).await;
     }
 
     #[tokio::test]
-    async fn kill_marks_dead_and_removes() {
-        let mgr = PtyManager::new();
-        let (tx, _rx) = tokio::sync::mpsc::channel(16);
-        let alive = Arc::new(AtomicBool::new(true));
+    async fn test_kill_marks_dead() {
+        let (manager, sid, _reader) = spawn_cat_pty().await;
 
-        mgr.register(
-            "s1",
-            PtyHandle {
-                stdin_tx: tx,
-                alive: alive.clone(),
-            },
-        )
-        .await;
+        assert!(manager.is_alive(&sid).await);
+        manager.kill(&sid).await;
+        // After kill, handle is removed
+        assert!(!manager.is_alive(&sid).await);
+    }
 
-        mgr.kill("s1").await;
-        assert!(!alive.load(Ordering::Relaxed));
-        assert!(!mgr.is_alive("s1").await);
+    #[tokio::test]
+    async fn test_concurrent_writes() {
+        let (manager, sid, mut reader) = spawn_cat_pty().await;
+        let manager = Arc::new(manager);
+
+        let m1 = Arc::clone(&manager);
+        let s1 = sid.clone();
+        let t1 = tokio::spawn(async move {
+            for i in 0..10 {
+                m1.write(&s1, format!("a{i}\n").into_bytes()).await.unwrap();
+            }
+        });
+
+        let m2 = Arc::clone(&manager);
+        let s2 = sid.clone();
+        let t2 = tokio::spawn(async move {
+            for i in 0..10 {
+                m2.write(&s2, format!("b{i}\n").into_bytes()).await.unwrap();
+            }
+        });
+
+        t1.await.unwrap();
+        t2.await.unwrap();
+
+        sleep(Duration::from_millis(200)).await;
+
+        let mut buf = vec![0u8; 4096];
+        let n = reader.read(&mut buf).unwrap();
+        let output = String::from_utf8_lossy(&buf[..n]);
+
+        // All 20 lines should appear (order may vary)
+        for i in 0..10 {
+            assert!(output.contains(&format!("a{i}")), "Missing a{i} in output");
+            assert!(output.contains(&format!("b{i}")), "Missing b{i} in output");
+        }
+
+        manager.kill(&sid).await;
     }
 }
