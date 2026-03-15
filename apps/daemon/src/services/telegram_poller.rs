@@ -93,14 +93,8 @@ impl TelegramPoller {
         // Route through the Vigil chat pipeline.
         match crate::api::vigil::process_chat(&self.deps, text, None).await {
             Ok(result) => {
-                let response = if result.error {
-                    format!("⚠️ {}", result.response)
-                } else {
-                    result.response
-                };
-
                 if let Err(e) =
-                    self.send_message(&config.bot_token, &config.chat_id, &response).await
+                    self.send_message(&config.bot_token, &config.chat_id, &result.response).await
                 {
                     tracing::error!(error = %e, "failed to send telegram response");
                 }

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{watch, Mutex};
+use tokio::sync::watch;
 
 use crate::config::Config;
 use crate::db::kv::KvStore;
@@ -21,6 +21,7 @@ use crate::services::memory_store::MemoryStore;
 use crate::services::sub_session::SubSessionService;
 use crate::services::vigil::VigilService;
 use crate::services::vigil_chat::VigilChatStore;
+use crate::services::vigil_manager::VigilManager;
 
 /// Shared application dependencies, cheaply cloneable via [`Arc`].
 #[derive(Clone)]
@@ -49,8 +50,8 @@ pub struct AppDeps {
     pub vigil_chat_store: VigilChatStore,
     /// Blocker escalation timer service.
     pub escalation_service: EscalationService,
-    /// Serialises Vigil CLI calls so only one `claude -p` runs at a time.
-    pub vigil_cli_mutex: Arc<Mutex<()>>,
+    /// Persistent Vigil PTY session manager.
+    pub vigil_manager: Arc<VigilManager>,
 }
 
 impl std::fmt::Debug for AppDeps {
@@ -71,7 +72,7 @@ impl std::fmt::Debug for AppDeps {
             .field("vigil_service", &"VigilService { .. }")
             .field("vigil_chat_store", &"VigilChatStore { .. }")
             .field("escalation_service", &"EscalationService { .. }")
-            .field("vigil_cli_mutex", &"Mutex { .. }")
+            .field("vigil_manager", &"VigilManager { .. }")
             .finish()
     }
 }
@@ -112,12 +113,24 @@ impl AppDeps {
         ));
         let escalation_service = EscalationService::with_default_timeout(Arc::clone(&event_bus));
 
+        let pty_manager = Arc::new(pty_manager);
+        let output_manager = Arc::new(output_manager);
+        let config = Arc::new(config);
+
+        let vigil_manager = Arc::new(VigilManager::new(
+            Arc::clone(&pty_manager),
+            Arc::clone(&output_manager),
+            Arc::clone(&event_bus),
+            Arc::clone(&config),
+            Arc::clone(&db),
+        ));
+
         Ok(Self {
-            config: Arc::new(config),
+            config,
             db,
             event_bus,
-            pty_manager: Arc::new(pty_manager),
-            output_manager: Arc::new(output_manager),
+            pty_manager,
+            output_manager,
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
             lance,
@@ -128,7 +141,7 @@ impl AppDeps {
             vigil_service,
             vigil_chat_store,
             escalation_service,
-            vigil_cli_mutex: Arc::new(Mutex::new(())),
+            vigil_manager,
         })
     }
 }

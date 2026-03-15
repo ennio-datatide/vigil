@@ -438,7 +438,11 @@ async fn sub_session_lifecycle() {
 // ---------------------------------------------------------------------------
 
 /// Exercises the Vigil overseer lifecycle:
-///   get status (empty) -> chat (activates) -> get status (active) -> get acta.
+///   get status (empty) -> acta (null) -> update acta -> get acta (updated).
+///
+/// NOTE: Chat tests require a running Vigil PTY which is only available when
+/// the daemon is running with a real `claude` binary. Chat-specific tests
+/// live in `api::vigil::tests`.
 #[tokio::test]
 async fn vigil_lifecycle() {
     let (app, _deps, _dir) = test_app().await;
@@ -465,54 +469,43 @@ async fn vigil_lifecycle() {
     assert_eq!(body["projectPath"], "/tmp/vigil-e2e");
     assert!(body["acta"].is_null(), "acta should be null for unknown project");
 
-    // -- Step 3: Chat with a vigil — should activate it.
-    let chat_body = json!({
+    // -- Step 3: Update acta.
+    let acta_body = json!({
         "projectPath": "/tmp/vigil-e2e",
-        "message": "What is the current project status?"
+        "content": "Project briefing for E2E test."
     });
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/vigil/acta")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&acta_body).unwrap()))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // -- Step 4: Get acta — should be updated.
     let resp = app
         .clone()
-        .oneshot(post_json("/api/vigil/chat", &chat_body))
+        .oneshot(get("/api/vigil/acta?projectPath=%2Ftmp%2Fvigil-e2e"))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
-    assert!(
-        body["response"].as_str().is_some(),
-        "should have a response string"
-    );
+    assert_eq!(body["acta"], "Project briefing for E2E test.");
 
-    // -- Step 4: Get vigil status — should show the project as active.
-    let resp = app
-        .clone()
-        .oneshot(get("/api/vigil/status"))
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = json_body(resp).await;
-    let projects = body["activeProjects"].as_array().unwrap();
-    assert_eq!(projects.len(), 1, "one vigil should be active");
-    assert_eq!(projects[0], "/tmp/vigil-e2e");
-
-    // -- Step 5: Chat with a second project to verify multi-project support.
+    // -- Step 5: Chat without PTY should return 500 (no Vigil running).
     let chat_body = json!({
-        "projectPath": "/tmp/vigil-e2e-2",
-        "message": "hello second project"
+        "message": "Hello Vigil"
     });
     let resp = app
-        .clone()
         .oneshot(post_json("/api/vigil/chat", &chat_body))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let resp = app
-        .oneshot(get("/api/vigil/status"))
-        .await
-        .unwrap();
-    let body = json_body(resp).await;
-    let projects = body["activeProjects"].as_array().unwrap();
-    assert_eq!(projects.len(), 2, "two vigils should be active");
+    assert_eq!(
+        resp.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "chat should fail without a running Vigil PTY"
+    );
 }
 
 // ---------------------------------------------------------------------------
