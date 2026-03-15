@@ -11,6 +11,7 @@ export function useTerminal(
   const [ptyAlive, setPtyAlive] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
   const ptyAliveRef = useRef(true);
+  const receivedFirstStatus = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -80,10 +81,10 @@ export function useTerminal(
         term.focus();
 
         // Also focus on click anywhere in the container
-        container.addEventListener('mousedown', () => {
-          // Use requestAnimationFrame to focus after the browser processes the click
+        const handleMousedown = () => {
           requestAnimationFrame(() => term?.focus());
-        });
+        };
+        container.addEventListener('mousedown', handleMousedown);
 
         term.write('Connecting...\r\n');
 
@@ -114,15 +115,22 @@ export function useTerminal(
               const msg = JSON.parse(event.data);
               if (msg.type === 'pty_status') {
                 const wasAlive = ptyAliveRef.current;
+                const isFirst = !receivedFirstStatus.current;
+                receivedFirstStatus.current = true;
                 ptyAliveRef.current = msg.alive;
                 setPtyAlive(msg.alive);
-                if (!msg.alive) {
+                if (!msg.alive && !isFirst) {
+                  // Only show "ended" when transitioning from alive → dead,
+                  // not on the initial status (which may arrive before PTY registers).
                   term?.write('\r\n\x1b[33m[Session ended — terminal is read-only]\x1b[0m\r\n');
-                } else if (!wasAlive) {
-                  // PTY came back alive after a restart
+                } else if (msg.alive && !wasAlive && !isFirst) {
                   term?.write('\r\n\x1b[32m[Session restarted — terminal is active]\x1b[0m\r\n');
                   term?.focus();
                 }
+                return;
+              }
+              if (msg.type === 'output' && typeof msg.data === 'string') {
+                term?.write(msg.data);
                 return;
               }
             } catch {
@@ -183,6 +191,7 @@ export function useTerminal(
       disposed = true;
       initialized.current = false;
       resizeObserver?.disconnect();
+      container?.removeEventListener('mousedown', handleMousedown);
       wsRef.current = null;
       ws?.close();
       term?.dispose();
