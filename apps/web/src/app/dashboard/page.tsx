@@ -1,7 +1,6 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { TerminalPanel } from '@/components/dashboard/terminal-panel';
 import { SessionMonitor } from '@/components/vigil/session-monitor';
@@ -40,7 +39,18 @@ export default function DashboardPage() {
           onClick={closePanel}
           className="absolute top-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface/80 backdrop-blur border border-border text-sm text-text-muted hover:text-text transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
           Back to Vigil
         </button>
       </div>
