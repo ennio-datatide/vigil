@@ -26,6 +26,7 @@ export function useTerminal(
     let ws: WebSocket | null = null;
     let fitAddon: import('@xterm/addon-fit').FitAddon | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let handleMousedown: (() => void) | null = null;
 
     (async () => {
       try {
@@ -81,7 +82,7 @@ export function useTerminal(
         term.focus();
 
         // Also focus on click anywhere in the container
-        const handleMousedown = () => {
+        handleMousedown = () => {
           requestAnimationFrame(() => term?.focus());
         };
         container.addEventListener('mousedown', handleMousedown);
@@ -191,7 +192,7 @@ export function useTerminal(
       disposed = true;
       initialized.current = false;
       resizeObserver?.disconnect();
-      container?.removeEventListener('mousedown', handleMousedown);
+      if (handleMousedown) container?.removeEventListener('mousedown', handleMousedown);
       wsRef.current = null;
       ws?.close();
       term?.dispose();
