@@ -10,6 +10,10 @@ license = "MIT"
 name = "praefectus"
 path = "src/main.rs"
 
+[[bin]]
+name = "pf"
+path = "src/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.44", features = ["full"] }
@@ -60,6 +64,12 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Crypto
 subtle = "2"
+
+# Unix process management
+libc = "0.2"
+
+# PTY allocation
+portable-pty = "0.8"
 
 # Utilities
 arc-swap = "1"

@@ -140,10 +140,12 @@ async fn handle_terminal(socket: WebSocket, session_id: String, deps: AppDeps) {
                 if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
                     match client_msg {
                         ClientMessage::Input { data } => {
-                            pty_manager.write(&session_id, data.as_bytes()).await;
+                            let _ = pty_manager
+                                .write(&session_id, data.into_bytes())
+                                .await;
                         }
                         ClientMessage::Resize { cols, rows } => {
-                            pty_manager.resize(&session_id, cols, rows);
+                            let _ = pty_manager.resize(&session_id, cols, rows).await;
                         }
                     }
                 }
