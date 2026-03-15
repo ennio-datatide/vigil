@@ -1,9 +1,11 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
+import { Maximize2, Minimize2, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useRestartSession } from '@/lib/api';
 import { useTerminal } from '@/lib/hooks/use-terminal';
+import { useTerminalStore } from '@/lib/stores/terminal-store';
 import { useToast } from '@/lib/stores/toast-store';
 
 import '@xterm/xterm/css/xterm.css';
@@ -15,6 +17,7 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
   const [inputOpen, setInputOpen] = useState(false);
   const restartMutation = useRestartSession();
   const toast = useToast();
+  const { panelMode, toggleFullscreen, closePanel, setPanelMode } = useTerminalStore();
 
   const handleMobileSend = () => {
     if (!mobileInput.trim()) return;
@@ -49,16 +52,45 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
             {!connected ? 'Connecting...' : !ptyAlive ? 'Read-only' : 'Connected'}
           </span>
         </span>
-        {connected && !ptyAlive && (
+        <div className="flex items-center gap-1">
+          {connected && !ptyAlive && (
+            <button
+              type="button"
+              onClick={handleRestart}
+              disabled={restartMutation.isPending}
+              className="btn-press rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+            >
+              {restartMutation.isPending ? 'Restarting...' : 'Restart'}
+            </button>
+          )}
+          {panelMode === 'fullscreen' ? (
+            <button
+              type="button"
+              onClick={() => setPanelMode('panel')}
+              className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+              title="Minimize"
+            >
+              <Minimize2 className="w-4 h-4 text-text-muted" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+              title="Maximize"
+            >
+              <Maximize2 className="w-4 h-4 text-text-muted" />
+            </button>
+          )}
           <button
             type="button"
-            onClick={handleRestart}
-            disabled={restartMutation.isPending}
-            className="btn-press rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+            onClick={closePanel}
+            className="p-1 rounded hover:bg-white/[0.06] transition-colors"
+            title="Close"
           >
-            {restartMutation.isPending ? 'Restarting...' : 'Restart'}
+            <X className="w-4 h-4 text-text-muted" />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Terminal body */}
