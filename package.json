@@ -21,7 +21,7 @@
     "generate:types": "openapi-typescript apps/daemon/openapi.json -o packages/shared/src/api-types.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.5",
+    "@biomejs/biome": "^2.4.6",
     "lightningcss": "^1.31.1",
     "turbo": "^2",
     "typescript": "^5.9"
