@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useVigilChat } from '@/lib/api';
+import { useTerminalStore } from '@/lib/stores/terminal-store';
 import type { EmbeddedCard } from '@/lib/types';
 
 interface BlockerCardProps {
@@ -11,8 +11,10 @@ interface BlockerCardProps {
 
 export function BlockerCard({ card }: BlockerCardProps) {
   const [reply, setReply] = useState('');
-  const router = useRouter();
+  const openSession = useTerminalStore((s) => s.openSession);
   const chatMutation = useVigilChat();
+
+  const [error, setError] = useState('');
 
   async function handleSubmit() {
     const trimmed = reply.trim();
@@ -22,8 +24,13 @@ export function BlockerCard({ card }: BlockerCardProps) {
       ? `[Re: blocker on session ${card.sessionId}] ${trimmed}`
       : trimmed;
 
-    await chatMutation.mutateAsync(context);
-    setReply('');
+    try {
+      setError('');
+      await chatMutation.mutateAsync({ message: context });
+      setReply('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reply');
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -37,6 +44,7 @@ export function BlockerCard({ card }: BlockerCardProps) {
     <div className="rounded-xl border border-border-subtle border-l-4 border-l-status-needs-input bg-surface px-4 py-3">
       <span className="text-xs font-semibold text-status-needs-input">Needs Input</span>
       {card.question && <p className="mt-1.5 text-sm text-text">{card.question}</p>}
+      {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
       <div className="mt-3 flex items-center gap-2">
         <input
           type="text"
@@ -57,7 +65,7 @@ export function BlockerCard({ card }: BlockerCardProps) {
         {card.sessionId && (
           <button
             type="button"
-            onClick={() => router.push(`/dashboard/sessions/${card.sessionId}`)}
+            onClick={() => card.sessionId && openSession(card.sessionId)}
             className="btn-press rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover"
           >
             Open terminal
