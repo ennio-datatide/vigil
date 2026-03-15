@@ -21,11 +21,14 @@ The daemon currently uses `tokio::process::Command` with piped stdin/stdout/stde
 
 #### Changes to `agent_spawner.rs`
 
-- Use `portable_pty::native_pty_system()` to create a PTY pair (master + child).
+- Use `portable_pty::native_pty_system()` to create a PTY pair (master + slave).
 - Spawn `claude` (no `-p` flag) as the child process inside the PTY slave.
+- Set `TERM=xterm-256color` in the child process environment so Claude Code emits correct escape sequences matching what xterm.js expects on the frontend.
+- Drop the slave PTY handle immediately after spawning the child — holding it open prevents proper EOF signaling when the child exits.
 - The master side provides a single read/write handle — no separate stdout/stderr.
+- Call `master.try_clone_reader()` to obtain a reader handle; move it into the output reader task. Call `master.try_clone_writer()` for the write handle.
 - Initial prompt is sent by typing it into the PTY + pressing Enter, just like a human would.
-- Terminal size (cols, rows) is set at spawn time from the frontend's reported dimensions.
+- Terminal size defaults to 80x24 at spawn time. The frontend sends a resize message on WebSocket connect, which updates the PTY dimensions shortly after. The TUI may briefly render at default size — this matches standard terminal emulator behavior.
 
 #### Changes to PTY Manager (`pty_manager.rs`)
 
@@ -33,17 +36,21 @@ The daemon currently uses `tokio::process::Command` with piped stdin/stdout/stde
 
 ```
 PtyHandle {
-    master_writer: Box<dyn Write + Send>,   // Write to PTY master (send keystrokes)
-    child: Box<dyn Child + Send>,           // Child process handle
-    alive: Arc<AtomicBool>,                 // Liveness flag
-    pty: PtyPair,                           // For resize operations
+    stdin_tx: mpsc::Sender<Vec<u8>>,        // Channel for write serialization
+    master: Box<dyn MasterPty + Send>,       // For resize operations
+    child: Box<dyn Child + Send>,            // Child process handle
+    alive: Arc<AtomicBool>,                  // Liveness flag
 }
 ```
 
+The reader handle (from `try_clone_reader()`) is NOT stored in `PtyHandle` — it is consumed by the output reader task at spawn time.
+
+**Write serialization:** Both Vigil and WebSocket handlers send bytes through `stdin_tx`. A dedicated blocking thread (`tokio::task::spawn_blocking`) drains the channel and writes sequentially to the PTY master via `try_clone_writer()`. This matches the existing `stdin_tx` channel pattern and avoids needing a `Mutex` on the writer.
+
 Methods:
-- `write(bytes)` — sends bytes directly to the PTY master (keystrokes into Claude Code)
-- `resize(cols, rows)` — calls `pty.master.resize()` which delivers real `SIGWINCH` to the child
-- `kill()` — sends SIGHUP to the child process group
+- `write(bytes)` — sends bytes through `stdin_tx` channel (non-blocking for callers)
+- `resize(cols, rows)` — calls `master.resize()` which delivers real `SIGWINCH` to the child
+- `kill()` — drops the `MasterPty` handle, which sends SIGHUP to the child's process group (standard Unix PTY behavior). If the child is still alive after a brief grace period (500ms), falls back to `child.kill()` (SIGKILL).
 - `is_alive()` — checks child process status via the `alive` flag
 
 #### Changes to Output Manager (`output_manager.rs`)
@@ -52,6 +59,19 @@ Methods:
 - Same broadcast channel + disk log architecture.
 - Raw PTY output includes full ANSI escape sequences and TUI rendering codes.
 - Buffer and disk log store raw bytes — xterm.js on the frontend interprets them.
+
+#### Async bridging
+
+`portable-pty` provides synchronous `Read`/`Write` traits. The daemon is fully async (tokio). Bridging strategy:
+
+- **Reader:** The PTY master reader (from `try_clone_reader()`) runs inside `tokio::task::spawn_blocking`. It performs blocking `read()` calls in a loop and sends chunks to the output manager via an async mpsc channel. The output manager then broadcasts to WebSocket clients and writes to disk — all async.
+- **Writer:** A dedicated `spawn_blocking` thread owns the PTY master writer (from `try_clone_writer()`) and drains an mpsc channel. Callers (WebSocket handler, Vigil) send bytes through the channel's async sender — non-blocking for the async runtime.
+
+This avoids blocking the tokio executor on synchronous PTY I/O.
+
+#### Error handling
+
+If `native_pty_system().openpty()` fails (e.g., file descriptor exhaustion, permission errors), the session transitions to `Failed` status with a descriptive error message. An `AppEvent::SessionUpdate` is emitted so the frontend and Vigil are notified. This matches the existing pattern in `spawn_exit_monitor`.
 
 #### New dependency
 
@@ -83,6 +103,13 @@ Methods:
 - History replay still works — replays raw PTY bytes. xterm.js processes escape sequences sequentially, reconstructing the TUI state.
 - WebSocket endpoint path stays the same: `/ws/terminal/{sessionId}`.
 
+#### Reconnection behavior
+
+On WebSocket disconnect/reconnect while a session is running:
+- The output broadcast channel only delivers messages to active subscribers — output between disconnect and reconnect is missed by the broadcast.
+- On reconnect, the full disk log is replayed (same as current behavior). This reconstructs the complete terminal state since xterm.js processes escape sequences sequentially.
+- For very long sessions, full replay may be slow. Future optimization: store periodic terminal state snapshots (via a headless vt100 parser) rather than replaying the entire byte stream. For now, full replay is acceptable.
+
 ### 3. Vigil as PTY Client
 
 **Vigil interacts with sessions by writing to the same PTY the human uses.**
@@ -105,7 +132,7 @@ Two complementary channels:
 
 1. **Structured events (primary):** Claude Code hooks fire events for tool use, session start/end, errors, blockers. Vigil uses these for decision-making — determining when a session needs input, when it's complete, when to escalate.
 
-2. **Raw PTY output (secondary):** Vigil subscribes to the same output broadcast channel that WebSocket clients use. This gives full context when Vigil needs to understand what Claude Code is doing beyond what hooks report.
+2. **Raw PTY output (secondary):** Vigil subscribes to the same output broadcast channel that WebSocket clients use. This is primarily for debugging and logging. Note that raw PTY output contains ANSI escape sequences and TUI rendering codes — Vigil should rely on structured hook events for decision-making, not parse terminal output. The raw subscription is available if Vigil needs to capture session transcripts or diagnose issues.
 
 #### Vigil lifecycle management
 
@@ -193,7 +220,24 @@ Minimal changes needed:
 
 ## Testing Strategy
 
-- **Unit tests:** PTY spawn, write, resize, kill operations against a simple shell process.
-- **Integration tests:** Full WebSocket → PTY → xterm.js round-trip with a mock CLI process.
-- **E2E tests:** Spawn a real `claude` session, verify TUI renders in xterm.js, send input, verify response.
-- **Vigil integration tests:** Verify Vigil can write to PTY and read structured events simultaneously.
+**Unit tests (spawn `/bin/cat` or `/bin/sh` as child, not `claude`):**
+- PTY allocation succeeds and returns valid master/child handles.
+- Write bytes to PTY master via `stdin_tx` channel, read them back from the reader task.
+- Resize delivers `SIGWINCH` — spawn a process that prints `$COLUMNS` on SIGWINCH, verify output changes.
+- Kill sequence: drop master triggers SIGHUP, child exits. If not, SIGKILL follows.
+- PTY allocation failure (e.g., invalid PtySize) returns error and does not panic.
+
+**Concurrency tests:**
+- Concurrent writes from two tasks (simulating WebSocket + Vigil) through `stdin_tx` — verify no byte interleaving or corruption.
+- Multiple broadcast subscribers receive identical output.
+
+**Integration tests:**
+- Full WebSocket → daemon → PTY → output broadcast → WebSocket round-trip with a shell child process.
+- Disconnect/reconnect: verify disk log replay reconstructs output correctly.
+- Resize message from WebSocket propagates to PTY child.
+
+**E2E tests:**
+- Spawn a real `claude` session, verify TUI renders in xterm.js, send input, verify response.
+- Vigil writes to PTY and reads structured hook events simultaneously.
+
+**Test infrastructure:** Use `tempdir` for disk logs, isolated SQLite (existing pattern), and short-lived shell processes as PTY children.
