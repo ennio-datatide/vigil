@@ -25,16 +25,42 @@ pub(crate) async fn list_sessions(State(deps): State<AppDeps>) -> Result<impl In
 }
 
 /// `GET /api/sessions/:id` — get a single session by ID.
+///
+/// The response includes the session metadata plus `output` (the worker's
+/// stdout/stderr text) when available, so callers like Vigil's `session_recall`
+/// MCP tool can read worker results without a WebSocket connection.
 pub(crate) async fn get_session(
     State(deps): State<AppDeps>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let store = SessionStore::new(deps.db);
+    let store = SessionStore::new(deps.db.clone());
     let session = store
         .get(&id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("session {id}")))?;
-    Ok(Json(session))
+
+    // Try to include output text: in-memory buffer first, disk log fallback.
+    let output = if let Some(buf) = deps.output_manager.get_buffer(&id).await {
+        if buf.is_empty() {
+            None
+        } else {
+            Some(String::from_utf8_lossy(&buf).into_owned())
+        }
+    } else {
+        deps.output_manager
+            .read_log(&id)
+            .filter(|b| !b.is_empty())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    };
+
+    // Build a combined response with session fields + output.
+    let mut value =
+        serde_json::to_value(&session).map_err(|e| crate::error::Error::Other(e.into()))?;
+    if let Some(output_text) = output {
+        value["output"] = serde_json::Value::String(output_text);
+    }
+
+    Ok(Json(value))
 }
 
 /// `POST /api/sessions` — create a new session and spawn the agent.

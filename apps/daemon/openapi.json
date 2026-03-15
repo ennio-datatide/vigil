@@ -950,7 +950,16 @@
       },
       "SessionStatus": {
         "type": "string",
-        "enum": ["queued", "running", "needs_input", "auth_required", "completed", "failed", "cancelled", "interrupted"]
+        "enum": [
+          "queued",
+          "running",
+          "needs_input",
+          "auth_required",
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ]
       },
       "AgentType": {
         "type": "string",
@@ -1001,33 +1010,21 @@
           "status": { "$ref": "#/components/schemas/SessionStatus" },
           "agentType": { "$ref": "#/components/schemas/AgentType" },
           "role": {
-            "oneOf": [
-              { "$ref": "#/components/schemas/SessionRole" },
-              { "type": "null" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/SessionRole" }, { "type": "null" }]
           },
           "parentId": { "type": ["string", "null"] },
           "spawnType": {
-            "oneOf": [
-              { "$ref": "#/components/schemas/SpawnType" },
-              { "type": "null" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/SpawnType" }, { "type": "null" }]
           },
           "spawnResult": { "type": ["string", "null"] },
           "retryCount": { "type": "integer" },
           "startedAt": { "type": ["integer", "null"], "description": "Unix milliseconds" },
           "endedAt": { "type": ["integer", "null"], "description": "Unix milliseconds" },
           "exitReason": {
-            "oneOf": [
-              { "$ref": "#/components/schemas/ExitReason" },
-              { "type": "null" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/ExitReason" }, { "type": "null" }]
           },
           "gitMetadata": {
-            "oneOf": [
-              { "$ref": "#/components/schemas/GitMetadata" },
-              { "type": "null" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/GitMetadata" }, { "type": "null" }]
           },
           "pipelineId": { "type": ["string", "null"] },
           "pipelineStepIndex": { "type": ["integer", "null"] }
@@ -1133,7 +1130,16 @@
           "createdAt": { "type": "integer", "description": "Unix milliseconds" },
           "updatedAt": { "type": "integer", "description": "Unix milliseconds" }
         },
-        "required": ["id", "name", "description", "steps", "edges", "isDefault", "createdAt", "updatedAt"]
+        "required": [
+          "id",
+          "name",
+          "description",
+          "steps",
+          "edges",
+          "isDefault",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "CreatePipelineInput": {
         "type": "object",
@@ -1210,7 +1216,16 @@
           "createdAt": { "type": "integer", "description": "Unix milliseconds" },
           "accessedAt": { "type": "integer", "description": "Unix milliseconds" }
         },
-        "required": ["id", "projectPath", "content", "memoryType", "importance", "accessCount", "createdAt", "accessedAt"]
+        "required": [
+          "id",
+          "projectPath",
+          "content",
+          "memoryType",
+          "importance",
+          "accessCount",
+          "createdAt",
+          "accessedAt"
+        ]
       },
       "CreateMemoryInput": {
         "type": "object",

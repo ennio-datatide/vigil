@@ -385,6 +385,13 @@ impl VigilMcpServer {
                     );
                     return Ok(CallToolResult::success(vec![Content::text(result)]));
                 }
+                "needs_input" | "auth_required" => {
+                    let output = session["output"].as_str().unwrap_or("(no output captured)");
+                    let result = format!(
+                        "Worker {sid} is blocked ({status_str}). The user needs to check the session terminal to respond.\n\nOutput so far:\n{output}"
+                    );
+                    return Ok(CallToolResult::success(vec![Content::text(result)]));
+                }
                 _ => {
                     // Still running — keep polling.
                 }

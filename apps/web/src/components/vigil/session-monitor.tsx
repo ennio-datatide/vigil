@@ -104,9 +104,7 @@ function PipelineGroup({ pipelineId: _pipelineId, sessions, childrenMap }: Pipel
       </button>
 
       {/* Pipeline sessions */}
-      {expanded && (
-        <SessionTree sessions={sessions} childrenMap={childrenMap} depth={1} />
-      )}
+      {expanded && <SessionTree sessions={sessions} childrenMap={childrenMap} depth={1} />}
     </div>
   );
 }
@@ -151,15 +149,9 @@ export function SessionMonitor({ onClose }: { onClose?: () => void }) {
     return map;
   }, [allSessions]);
 
-  const { pipelineGroups, standalone } = useMemo(
-    () => groupSessions(rootSessions),
-    [rootSessions],
-  );
+  const { pipelineGroups, standalone } = useMemo(() => groupSessions(rootSessions), [rootSessions]);
 
-  const pipelineEntries = useMemo(
-    () => Object.entries(pipelineGroups),
-    [pipelineGroups],
-  );
+  const pipelineEntries = useMemo(() => Object.entries(pipelineGroups), [pipelineGroups]);
 
   const hasAnySessions = pipelineEntries.length > 0 || standalone.length > 0;
 
@@ -181,7 +173,14 @@ export function SessionMonitor({ onClose }: { onClose?: () => void }) {
             className="rounded p-0.5 text-white/30 transition-colors hover:text-white/60"
             aria-label="Close session panel"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
           </button>
         )}
       </div>

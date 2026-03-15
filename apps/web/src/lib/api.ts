@@ -5,9 +5,9 @@ import type {
   CreateSessionInputType,
   NotificationMessage,
   Pipeline,
+  PipelineExecution,
   Session,
   UpdatePipelineInputType,
-  PipelineExecution,
   VigilMessage,
 } from './types';
 

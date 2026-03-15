@@ -8,8 +8,6 @@ use std::fmt::Write as _;
 
 use axum::extract::{Json, Query, State};
 use axum::response::IntoResponse;
-use rig::client::completion::CompletionClient as _;
-use rig::completion::Prompt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -60,6 +58,165 @@ pub(crate) async fn get_status(
     Ok(Json(StatusResponse { active_projects }))
 }
 
+/// Result of processing a Vigil chat message.
+pub(crate) struct ChatResult {
+    pub response: String,
+    pub session_id: Option<String>,
+    pub hit_max_turns: bool,
+    pub error: bool,
+}
+
+/// Core Vigil chat logic — shared between the HTTP handler and the Telegram poller.
+///
+/// Persists messages, builds context, invokes Claude CLI, and returns the result.
+#[allow(clippy::too_many_lines)]
+pub(crate) async fn process_chat(
+    deps: &AppDeps,
+    message: &str,
+    project_path: Option<&str>,
+) -> anyhow::Result<ChatResult> {
+    tracing::info!(
+        message_len = message.len(),
+        project_path = ?project_path,
+        "vigil chat request received"
+    );
+
+    // Save user message.
+    deps.vigil_chat_store
+        .save_message("user", message, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tracing::debug!("user message persisted");
+
+    // If project_path provided, ensure vigil is active for that project.
+    if let Some(pp) = project_path {
+        deps.vigil_service.ensure_vigil(pp).await;
+        tracing::debug!(project_path = %pp, "vigil activated for project");
+    }
+
+    // Load recent chat history for context (last 6 non-error messages).
+    let all_messages = deps
+        .vigil_chat_store
+        .list_messages(100, 0)
+        .await
+        .unwrap_or_default();
+    let recent: Vec<_> = all_messages
+        .iter()
+        .rev()
+        .filter(|m| !is_error_message(m))
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    tracing::debug!(
+        total_messages = all_messages.len(),
+        context_messages = recent.len(),
+        "loaded chat history for context"
+    );
+
+    // Build the conversation context from recent history.
+    let mut context = String::new();
+    for msg in &recent {
+        let role = if msg.role == "user" { "Human" } else { "Vigil" };
+        let _ = write!(context, "{role}: {}\n\n", msg.content);
+    }
+
+    // Build the full prompt — just the user message with minimal context.
+    let prompt = if context.is_empty() {
+        message.to_owned()
+    } else {
+        format!(
+            "<conversation_history>\n{context}</conversation_history>\n\n{message}",
+        )
+    };
+
+    tracing::debug!(prompt_len = prompt.len(), "built prompt with context");
+
+    // Ensure Vigil config files exist.
+    let vigil_dir = deps.config.praefectus_home.join("vigil");
+    std::fs::create_dir_all(&vigil_dir).ok();
+
+    let mcp_config_path = vigil_dir.join("mcp-config.json");
+    let daemon_url = format!("http://localhost:{}", deps.config.server_port);
+    if let Err(e) = crate::process::claude_cli::write_mcp_config(&mcp_config_path, &daemon_url) {
+        tracing::error!(error = %e, "failed to write MCP config");
+    }
+
+    // Always write the strategy prompt so the compiled-in version wins
+    // over any stale copy on disk.
+    let strategy_path = vigil_dir.join("strategy.md");
+    let strategy_content = include_str!("../../prompts/vigil-strategy.md");
+    std::fs::write(&strategy_path, strategy_content).ok();
+
+    tracing::info!("invoking claude CLI for vigil response...");
+
+    // Serialise CLI calls — only one `claude -p` at a time.
+    let _guard = deps.vigil_cli_mutex.lock().await;
+
+    // Invoke Claude CLI.
+    let result = match crate::process::claude_cli::invoke_vigil(
+        &prompt,
+        &strategy_path,
+        &mcp_config_path,
+        10,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = %e, "vigil claude CLI call failed");
+            return Ok(ChatResult {
+                response: format!("Vigil encountered an error: {e}"),
+                session_id: None,
+                hit_max_turns: false,
+                error: true,
+            });
+        }
+    };
+
+    tracing::info!(
+        response_len = result.response.len(),
+        session_id = ?result.session_id,
+        hit_max_turns = result.hit_max_turns,
+        "claude CLI responded"
+    );
+
+    // Build response text — append session link if max turns was hit.
+    let response = if result.hit_max_turns {
+        let session_note = if let Some(ref sid) = result.session_id {
+            format!(
+                "\n\n---\n*Reached max turns limit. Resume this session:*\n```\nclaude --resume {sid}\n```",
+            )
+        } else {
+            "\n\n---\n*Reached max turns limit. Consider increasing max turns or breaking the task into smaller steps.*".to_string()
+        };
+
+        if result.response.is_empty() {
+            format!("Vigil ran out of turns before completing the response.{session_note}")
+        } else {
+            format!("{}{session_note}", result.response)
+        }
+    } else {
+        result.response
+    };
+
+    // Save vigil response.
+    deps.vigil_chat_store
+        .save_message("vigil", &response, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tracing::debug!("vigil response persisted");
+
+    Ok(ChatResult {
+        session_id: result.session_id,
+        hit_max_turns: result.hit_max_turns,
+        error: false,
+        response,
+    })
+}
+
 /// `POST /api/vigil/chat` — chat with the Vigil overseer.
 ///
 /// The `project_path` field is optional. When provided, the Vigil for that
@@ -69,89 +226,23 @@ pub(crate) async fn chat(
     State(deps): State<AppDeps>,
     Json(input): Json<ChatInput>,
 ) -> Result<impl IntoResponse> {
-    // Save user message.
-    deps.vigil_chat_store
-        .save_message("user", &input.message, None)
-        .await?;
+    let result = process_chat(&deps, &input.message, input.project_path.as_deref())
+        .await
+        .map_err(crate::error::Error::Other)?;
 
-    // If project_path provided, ensure vigil is active for that project.
-    if let Some(ref pp) = input.project_path {
-        deps.vigil_service.ensure_vigil(pp).await;
+    if result.error {
+        return Ok(Json(json!({
+            "response": result.response,
+            "sessionId": serde_json::Value::Null,
+            "hitMaxTurns": false,
+            "error": true,
+        })));
     }
 
-    let response = if let Some(ref client) = deps.anthropic_client {
-        // Determine project context for system prompt.
-        let project_path = input.project_path.as_deref().unwrap_or("global");
-        let system_prompt = crate::llm::vigil::render_system_prompt(project_path);
-
-        // Load recent chat history for context.
-        let history = deps
-            .vigil_chat_store
-            .list_messages(20, 0)
-            .await
-            .unwrap_or_default();
-
-        // Build the conversation context from history.
-        let mut context = String::new();
-        for msg in &history {
-            let role = if msg.role == "user" { "Human" } else { "Vigil" };
-            let _ = write!(context, "{role}: {}\n\n", msg.content);
-        }
-
-        // Build rig-core agent with Vigil tools.
-        let vigil_deps = deps.vigil_service.vigil_deps();
-        let agent = client
-            .agent(rig::providers::anthropic::completion::CLAUDE_4_SONNET)
-            .preamble(&system_prompt)
-            .max_tokens(4096)
-            .temperature(0.3)
-            .tool(crate::llm::vigil::MemoryRecallTool::new(
-                vigil_deps.memory_search.clone(),
-            ))
-            .tool(crate::llm::vigil::MemorySaveTool::new(
-                vigil_deps.memory_store.clone(),
-            ))
-            .tool(crate::llm::vigil::MemoryDeleteTool::new(
-                vigil_deps.memory_store.clone(),
-            ))
-            .tool(crate::llm::vigil::SessionRecallTool::new(
-                std::sync::Arc::clone(&vigil_deps.db),
-            ))
-            .tool(crate::llm::vigil::ActaUpdateTool::new(
-                vigil_deps.kv.clone(),
-            ))
-            .tool(crate::llm::vigil::SpawnWorkerTool::new(
-                std::sync::Arc::clone(&vigil_deps.db),
-                vigil_deps.sub_session.clone(),
-            ))
-            .default_max_turns(10)
-            .build();
-
-        // Prompt the agent with conversation context + new message.
-        let prompt = if context.is_empty() {
-            input.message.clone()
-        } else {
-            format!("<conversation_history>\n{context}</conversation_history>\n\n{}", input.message)
-        };
-
-        match agent.prompt(&prompt).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                tracing::error!(error = %e, "vigil llm call failed");
-                format!("Vigil encountered an error: {e}")
-            }
-        }
-    } else {
-        "Vigil LLM is not configured. Set the ANTHROPIC_API_KEY environment variable.".to_owned()
-    };
-
-    // Save vigil response.
-    deps.vigil_chat_store
-        .save_message("vigil", &response, None)
-        .await?;
-
     Ok(Json(json!({
-        "response": response,
+        "response": result.response,
+        "sessionId": result.session_id,
+        "hitMaxTurns": result.hit_max_turns,
     })))
 }
 
@@ -197,6 +288,26 @@ pub(crate) async fn get_history(
         .list_messages(query.limit, query.offset)
         .await?;
     Ok(Json(json!({ "messages": messages })))
+}
+
+/// `DELETE /api/vigil/history` — clear all chat history.
+pub(crate) async fn clear_history(State(deps): State<AppDeps>) -> Result<impl IntoResponse> {
+    deps.vigil_chat_store.clear().await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Returns `true` when the message looks like a Vigil error that should be
+/// excluded from conversation context sent to Claude.
+fn is_error_message(msg: &crate::services::vigil_chat::VigilMessage) -> bool {
+    if msg.role != "vigil" {
+        return false;
+    }
+    let c = &msg.content;
+    c.starts_with("Vigil encountered an error:")
+        || c.starts_with("Error:")
+        || c.starts_with("Failed to reach Vigil")
+        || c.contains("timed out after")
+        || c.contains("Reached max turns")
 }
 
 // ---------------------------------------------------------------------------
@@ -309,11 +420,8 @@ mod tests {
 
         let json = json_body(resp).await;
         assert!(
-            json["response"]
-                .as_str()
-                .unwrap()
-                .contains("ANTHROPIC_API_KEY"),
-            "should indicate missing API key when not configured"
+            json["response"].as_str().is_some(),
+            "should have a response string"
         );
     }
 
@@ -353,8 +461,8 @@ mod tests {
 
         let json = json_body(resp).await;
         assert!(
-            json["response"].as_str().unwrap().contains("ANTHROPIC_API_KEY"),
-            "should indicate missing API key without project_path"
+            json["response"].as_str().is_some(),
+            "should have a response string"
         );
     }
 

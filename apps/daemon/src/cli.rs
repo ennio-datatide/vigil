@@ -19,7 +19,18 @@ pub struct Cli {
 /// Top-level subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Start the daemon server.
+    /// Check Claude Code auth, then start the daemon (background by default).
+    Up {
+        /// Port to listen on.
+        #[arg(long, default_value_t = 8000)]
+        port: u16,
+        /// Run in the foreground (show logs in terminal).
+        #[arg(short, long)]
+        foreground: bool,
+    },
+    /// Stop the daemon.
+    Down,
+    /// Start the daemon server (no auth check).
     Daemon {
         /// Port to listen on.
         #[arg(long, default_value_t = 8000)]
@@ -46,12 +57,296 @@ pub enum Command {
     Status,
     /// Clean up stale sessions and worktrees.
     Cleanup,
-    /// Run the Vigil MCP server (stdio transport).
+    /// Clear Vigil chat history.
+    ClearHistory,
+    /// Run the Vigil MCP server (stdio transport). Internal — spawned by claude CLI.
+    #[command(hide = true)]
     McpServe {
         /// URL of the running daemon.
         #[arg(long, default_value = "http://localhost:8000")]
         daemon_url: String,
     },
+}
+
+/// Execute the `up` subcommand — verify Claude Code auth, then start the daemon.
+///
+/// # Errors
+///
+/// Propagates any error from [`crate::run`] or if `claude` CLI is missing.
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+pub async fn cmd_up(port: u16) -> anyhow::Result<()> {
+    println!("Checking Claude Code authentication...");
+
+    // Run `claude auth status` (JSON output by default).
+    let output = tokio::process::Command::new("claude")
+        .args(["auth", "status"])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let json: serde_json::Value =
+                serde_json::from_slice(&o.stdout).unwrap_or_default();
+
+            let logged_in = json["loggedIn"].as_bool().unwrap_or(false);
+            let sub_type = json["subscriptionType"].as_str().unwrap_or("unknown");
+            let email = json["email"].as_str().unwrap_or("unknown");
+
+            if !logged_in {
+                eprintln!("Not logged in to Claude Code.");
+                eprintln!("Run: claude auth login");
+                std::process::exit(1);
+            }
+
+            if sub_type != "max" && sub_type != "max_5x" {
+                eprintln!("Claude Code subscription: {sub_type}");
+                eprintln!("Vigil requires a Claude Max subscription for unlimited usage.");
+                eprintln!("You can still use Praefectus, but Vigil chat will incur per-token costs.");
+                eprintln!();
+            }
+
+            println!("  Logged in as {email} (plan: {sub_type})");
+        }
+        Ok(_) => {
+            eprintln!("Claude Code is not authenticated.");
+            eprintln!("Run: claude auth login");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            eprintln!("Could not find the `claude` CLI.");
+            eprintln!("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code");
+            std::process::exit(1);
+        }
+    }
+
+    println!("Starting Praefectus daemon on port {port}...");
+
+    // Resolve the web app directory relative to the daemon binary or workspace root.
+    let web_dir = find_web_dir();
+
+    let web_child = if let Some(dir) = &web_dir {
+        println!("Starting Next.js frontend on port 3000...");
+        let child = unsafe {
+            tokio::process::Command::new("npm")
+                .args(["run", "dev"])
+                .current_dir(dir)
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                // Put child in its own process group so we can kill the
+                // entire tree (node + postcss workers) on shutdown.
+                .pre_exec(|| {
+                    libc::setpgid(0, 0);
+                    Ok(())
+                })
+                .kill_on_drop(true)
+                .spawn()
+        };
+
+        match child {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Warning: could not start Next.js frontend: {e}");
+                None
+            }
+        }
+    } else {
+        eprintln!("Warning: could not find apps/web directory; skipping frontend.");
+        None
+    };
+
+    println!();
+
+    crate::run(port).await?;
+
+    // Daemon stopped — kill the entire frontend process group.
+    if let Some(ref child) = web_child
+        && let Some(pid) = child.id()
+    {
+        #[allow(clippy::cast_possible_wrap)]
+        let pgid = pid as i32;
+        // Send SIGTERM to the entire process group (negative PID).
+        unsafe {
+            libc::kill(-pgid, libc::SIGTERM);
+        }
+        println!("Stopped frontend (process group {pgid})");
+    }
+
+    Ok(())
+}
+
+/// Locate the `apps/web` directory by walking up from the current executable
+/// or the current working directory looking for the monorepo root.
+fn find_web_dir() -> Option<std::path::PathBuf> {
+    // Try from current working directory first (most common in dev).
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join("apps/web");
+        if candidate.join("package.json").exists() {
+            return Some(candidate);
+        }
+        // Maybe we're inside apps/daemon — go up two levels.
+        for ancestor in cwd.ancestors().skip(1) {
+            let candidate = ancestor.join("apps/web");
+            if candidate.join("package.json").exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Try from the executable location.
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors().skip(1) {
+            let candidate = ancestor.join("apps/web");
+            if candidate.join("package.json").exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+/// Praefectus home directory (`~/.praefectus`).
+fn pf_home() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".praefectus")
+}
+
+/// PID file path for a backgrounded daemon.
+fn pid_file_path() -> std::path::PathBuf {
+    pf_home().join("daemon.pid")
+}
+
+/// Log file path for a backgrounded daemon.
+fn daemon_log_path() -> std::path::PathBuf {
+    pf_home().join("logs").join("daemon.log")
+}
+
+/// Execute `pf up -b` — re-spawn the current binary as a detached background
+/// process, then exit immediately so the user gets their terminal back.
+///
+/// # Errors
+///
+/// Returns an error if the child process cannot be spawned.
+///
+/// # Panics
+///
+/// Panics if the current executable path cannot be determined.
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+pub fn cmd_up_background(port: u16) -> anyhow::Result<()> {
+    // Make sure dirs exist.
+    let log_path = daemon_log_path();
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let pid_path = pid_file_path();
+    if let Some(parent) = pid_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
+    // Check if already running.
+    if pid_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&pid_path)
+        && let Ok(pid) = content.trim().parse::<i32>()
+    {
+        // Check if process is alive.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        if alive {
+            println!("Praefectus is already running (PID {pid}).");
+            println!("Use `pf down` to stop it first.");
+            return Ok(());
+        }
+        // Stale PID file — remove it.
+        std::fs::remove_file(&pid_path).ok();
+    }
+
+    let exe = std::env::current_exe().expect("failed to get current executable path");
+    let log_file = std::fs::File::create(&log_path)?;
+    let log_stderr = log_file.try_clone()?;
+
+    let child = std::process::Command::new(exe)
+        .args(["up", "--foreground", "--port", &port.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(log_file)
+        .stderr(log_stderr)
+        .spawn()?;
+
+    let pid = child.id();
+    std::fs::write(&pid_path, pid.to_string())?;
+
+    println!("Praefectus started in background (PID {pid})");
+    println!("  Daemon:   http://localhost:{port}");
+    println!("  Frontend: http://localhost:3000");
+    println!("  Logs:     {}", log_path.display());
+    println!();
+    println!("Use `pf down` to stop.");
+
+    Ok(())
+}
+
+/// Execute the `down` subcommand — stop a backgrounded daemon.
+///
+/// # Errors
+///
+/// Returns an error if the PID file cannot be read.
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+pub async fn cmd_down() -> anyhow::Result<()> {
+    let pid_path = pid_file_path();
+
+    if !pid_path.exists() {
+        // Try health check in case it's running without a PID file.
+        let client = reqwest::Client::new();
+        if client
+            .get(format!("{DEFAULT_URL}/health"))
+            .send()
+            .await
+            .is_ok()
+        {
+            eprintln!("A daemon seems to be running but has no PID file.");
+            eprintln!("Kill it manually or find the process with: lsof -i :8000");
+        } else {
+            println!("Praefectus is not running.");
+        }
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&pid_path)?;
+    let pid: i32 = content
+        .trim()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid PID in {}", pid_path.display()))?;
+
+    // Check if alive.
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    if !alive {
+        println!("Praefectus (PID {pid}) is not running. Cleaning up PID file.");
+        std::fs::remove_file(&pid_path).ok();
+        return Ok(());
+    }
+
+    // Send SIGTERM to the process group (negative PID kills the whole group).
+    // Fall back to the single process if PGID kill fails.
+    println!("Stopping Praefectus (PID {pid})...");
+    let killed = unsafe { libc::kill(-pid, libc::SIGTERM) };
+    if killed != 0 {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
+
+    // Wait briefly for shutdown.
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let still_alive = unsafe { libc::kill(pid, 0) } == 0;
+        if !still_alive {
+            break;
+        }
+    }
+
+    std::fs::remove_file(&pid_path).ok();
+    println!("Praefectus stopped.");
+
+    Ok(())
 }
 
 /// Execute the `daemon` subcommand — starts the server.
@@ -102,7 +397,7 @@ pub async fn cmd_start(project: &str, prompt: &str, skill: Option<&str>) -> anyh
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: praefectus daemon");
+            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
             std::process::exit(1);
         }
     }
@@ -188,7 +483,7 @@ pub async fn cmd_ls(all: bool) -> anyhow::Result<()> {
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: praefectus daemon");
+            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
             std::process::exit(1);
         }
     }
@@ -267,7 +562,38 @@ pub async fn cmd_cleanup() -> anyhow::Result<()> {
             println!("Cleanup: daemon returned an error.");
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: praefectus daemon");
+            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute the `clear-history` subcommand — clears Vigil chat history.
+///
+/// # Errors
+///
+/// Returns an error if the daemon is unreachable.
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+pub async fn cmd_clear_history() -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .delete(format!("{DEFAULT_URL}/api/vigil/history"))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            println!("Chat history cleared.");
+        }
+        Ok(r) => {
+            let status = r.status();
+            eprintln!("Failed to clear history: {status}");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+            std::process::exit(1);
         }
     }
 
