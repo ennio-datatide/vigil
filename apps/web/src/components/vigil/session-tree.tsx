@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useTerminalStore } from '@/lib/stores/terminal-store';
 import type { Session } from '@/lib/types';
 
 const STATUS_DOT_COLOR: Record<string, string> = {
@@ -50,7 +50,8 @@ interface SessionRowProps {
 }
 
 function SessionRow({ session, childrenMap, depth }: SessionRowProps) {
-  const router = useRouter();
+  const openSession = useTerminalStore((s) => s.openSession);
+  const activeSessionId = useTerminalStore((s) => s.activeSessionId);
   const children = childrenMap[session.id];
   const hasChildren = children && children.length > 0;
   const [expanded, setExpanded] = useState(true);
@@ -61,7 +62,9 @@ function SessionRow({ session, childrenMap, depth }: SessionRowProps) {
   return (
     <div>
       <div
-        className="group flex w-full items-center gap-2 py-2 transition-colors hover:bg-white/[0.04]"
+        className={`group flex w-full items-center gap-2 py-2 transition-colors hover:bg-white/[0.04] ${
+          activeSessionId === session.id ? 'bg-accent/10' : ''
+        }`}
         style={{ paddingLeft: `${16 + depth * 20}px`, paddingRight: '16px' }}
       >
         {/* Expand/collapse toggle */}
@@ -88,7 +91,7 @@ function SessionRow({ session, childrenMap, depth }: SessionRowProps) {
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => router.push(`/dashboard/sessions/${session.id}`)}
+          onClick={() => openSession(session.id)}
         >
           {/* Status dot */}
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
