@@ -481,8 +481,15 @@ fn wire_pty_io(
                 Ok(0) => break, // EOF — child exited
                 Ok(n) => {
                     let chunk = buf[..n].to_vec();
+                    // IMPORTANT: Cannot use handle.block_on() inside spawn_blocking
+                    // (panics with "Cannot block_on from within a tokio runtime").
+                    // Use handle.spawn() to dispatch async work non-blocking.
                     if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        handle.block_on(output_manager.append(&sid, &chunk));
+                        let om = Arc::clone(&output_manager);
+                        let s = sid.clone();
+                        let _ = handle.spawn(async move {
+                            om.append(&s, &chunk).await;
+                        });
                     }
                 }
                 Err(_) => break,
@@ -767,78 +774,6 @@ Run: `cd apps/daemon && cargo clippy -- -D warnings`
 Expected: Clean.
 
 - [ ] **Step 6: Commit**
-
-```bash
-git add apps/daemon/
-git commit -m "fix: update all references for new PTY-based PtyHandle"
-```
-
----
-
-### Task 4: Wire resize in WebSocket terminal handler
-
-**Files:**
-- Modify: `apps/daemon/src/api/ws_terminal.rs`
-
-- [ ] **Step 1: Write failing test for resize forwarding**
-
-Test that a resize WebSocket message calls `pty_manager.resize()` with correct dimensions.
-
-- [ ] **Step 2: Update handle_terminal() to call pty_manager.resize()**
-
-In `ws_terminal.rs`, the `Resize` message handler (currently line ~150) calls `pty_manager.resize()`. Update it to pass through to the real resize method:
-
-```rust
-ClientMessage::Resize { cols, rows } => {
-    let _ = deps.pty_manager.resize(&session_id, cols, rows).await;
-}
-```
-
-This should already be close to the current code — verify it calls the new `resize()` that actually works.
-
-- [ ] **Step 3: Run tests**
-
-Run: `cd apps/daemon && cargo test ws_terminal -- --nocapture`
-Expected: Pass.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add apps/daemon/src/api/ws_terminal.rs
-git commit -m "feat: wire real PTY resize in WebSocket terminal handler"
-```
-
----
-
-### Task 5: Update compile-breaking references
-
-**Files:**
-- Modify: any files that reference old `PtyHandle` struct fields or old spawn functions
-
-- [ ] **Step 1: Compile the full project**
-
-Run: `cd apps/daemon && cargo build 2>&1`
-Fix any compilation errors from struct field changes propagating to:
-- `deps.rs` (if it constructs PtyHandle)
-- `sessions.rs` (cancel_session calls pty_manager.kill())
-- `mcp.rs` (if it spawns sessions)
-- `services/` (Vigil service, session manager)
-
-- [ ] **Step 2: Fix each compilation error**
-
-Most should be straightforward — the `PtyManager` API (`write`, `kill`, `is_alive`, `resize`) has the same method signatures. The `PtyHandle` struct is only constructed in `agent_spawner.rs`.
-
-- [ ] **Step 3: Run full test suite**
-
-Run: `cd apps/daemon && cargo test`
-Expected: All tests pass.
-
-- [ ] **Step 4: Run clippy**
-
-Run: `cd apps/daemon && cargo clippy -- -D warnings`
-Expected: Clean.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add apps/daemon/
