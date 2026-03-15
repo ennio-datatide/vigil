@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRef, useState } from 'react';
 import { useRestartSession } from '@/lib/api';
 import { useTerminal } from '@/lib/hooks/use-terminal';
+import { useSessionStore } from '@/lib/stores/session-store';
 import { useTerminalStore } from '@/lib/stores/terminal-store';
 import { useToast } from '@/lib/stores/toast-store';
 
@@ -17,6 +18,7 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
   const restartMutation = useRestartSession();
   const toast = useToast();
   const { panelMode, toggleFullscreen, closePanel, setPanelMode } = useTerminalStore();
+  const session = useSessionStore((s) => s.sessions[sessionId]);
 
   const handleMobileSend = () => {
     if (!mobileInput.trim()) return;
@@ -50,6 +52,11 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
           <span className="text-xs text-text-muted">
             {!connected ? 'Connecting...' : !ptyAlive ? 'Read-only' : 'Connected'}
           </span>
+          {session && (
+            <span className="ml-2 max-w-[200px] truncate text-xs text-text-muted/70">
+              {session.role || session.prompt?.slice(0, 40)}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-1">
           {connected && !ptyAlive && (
