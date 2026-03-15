@@ -418,9 +418,10 @@ fn spawn_claude_pty(
     let mut cmd = CommandBuilder::new("claude");
     cmd.cwd(work_dir);
     cmd.env("TERM", "xterm-256color");
-    // Prevent nested Claude Code detection.
+    // Prevent nested Claude Code detection (both env var forms).
     cmd.env_remove("CLAUDE_CODE");
     cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
+    cmd.env_remove("CLAUDECODE");
 
     if continue_session {
         cmd.arg("--continue");
