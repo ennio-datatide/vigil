@@ -1,18 +1,31 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { useVigilChat, useVigilHistoryQuery } from '@/lib/api';
+import { useProjectsQuery, useVigilChat, useVigilHistoryQuery } from '@/lib/api';
 import { useVigilStore } from '@/lib/stores/vigil-store';
 import { ChatMessage } from './chat-message';
 
-export function VigilChat() {
+export function VigilChat({ onSessionClick }: { onSessionClick?: () => void }) {
+  const router = useRouter();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, isProcessing, setMessages, addMessage, setProcessing } = useVigilStore();
+  const {
+    messages,
+    isProcessing,
+    projectPath,
+    activities,
+    setMessages,
+    addMessage,
+    setProcessing,
+    setProjectPath,
+    clearActivities,
+  } = useVigilStore();
   const { data } = useVigilHistoryQuery();
   const chatMutation = useVigilChat();
+  const { data: projects } = useProjectsQuery();
 
   useEffect(() => {
     if (data?.messages) {
@@ -20,13 +33,13 @@ export function VigilChat() {
     }
   }, [data, setMessages]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message/processing changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message/processing/activity changes
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, isProcessing]);
+  }, [messages, isProcessing, activities]);
 
   function resetTextarea() {
     if (textareaRef.current) {
@@ -49,20 +62,32 @@ export function VigilChat() {
     addMessage(userMessage);
     setInput('');
     resetTextarea();
+    clearActivities();
     setProcessing(true);
 
     try {
-      const result = await chatMutation.mutateAsync(trimmed);
+      const result = await chatMutation.mutateAsync({ message: trimmed, projectPath });
       const vigilMessage = {
         id: Date.now() + 1,
         role: 'vigil' as const,
         content: result.response,
+        sessionId: result.sessionId ?? undefined,
         embeddedCards: null,
         createdAt: Date.now(),
       };
       addMessage(vigilMessage);
+    } catch (err) {
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: 'vigil' as const,
+        content: `Failed to reach Vigil. ${err instanceof Error ? err.message : 'Unknown error.'}`,
+        embeddedCards: null,
+        createdAt: Date.now(),
+      };
+      addMessage(errorMessage);
     } finally {
       setProcessing(false);
+      clearActivities();
     }
   }
 
@@ -100,9 +125,29 @@ export function VigilChat() {
               <ChatMessage key={msg.id} message={msg} />
             ))}
             {isProcessing && (
-              <div className="flex items-center gap-2 py-2">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-                <span className="text-xs text-text-muted">Vigil is thinking...</span>
+              <div className="space-y-1.5 py-2">
+                {activities.map((activity) => (
+                  <div key={activity.id} className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent/50" />
+                    {activity.sessionId ? (
+                      <button
+                        type="button"
+                        className="text-xs text-text-muted transition-colors hover:text-accent"
+                        onClick={() => router.push(`/dashboard/sessions/${activity.sessionId}`)}
+                      >
+                        {activity.text}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-text-muted">{activity.text}</span>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+                  <span className="text-xs text-text-muted">
+                    {activities.length > 0 ? 'Vigil is working...' : 'Vigil is thinking...'}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -110,6 +155,22 @@ export function VigilChat() {
       </div>
 
       <div className="flex-shrink-0 border-t border-border-subtle px-5 py-3">
+        {projects && projects.length > 0 && (
+          <div className="mb-2">
+            <select
+              value={projectPath ?? ''}
+              onChange={(e) => setProjectPath(e.target.value || null)}
+              className="w-full rounded-lg bg-surface-alt px-3 py-1.5 text-xs text-text-muted focus-accent"
+            >
+              <option value="">No project context</option>
+              {projects.map((p) => (
+                <option key={p.path} value={p.path}>
+                  {p.name || p.path.split('/').pop()}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}

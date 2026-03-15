@@ -1,8 +1,9 @@
 'use client';
-import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSessionsQuery } from '../api';
 import { useSessionStore } from '../stores/session-store';
+import { useVigilStore } from '../stores/vigil-store';
 import type { WsMessageExtended } from '../types';
 import { wsUrl } from '../ws-url';
 
@@ -31,13 +32,54 @@ export function useDashboardWs() {
 
     ws.onmessage = (event) => {
       const msg: WsMessageExtended = JSON.parse(event.data);
+      const { isProcessing, addActivity } = useVigilStore.getState();
       switch (msg.type) {
         case 'state_sync':
           syncAll(msg.sessions);
           break;
-        case 'session_update':
+        case 'session_update': {
+          const prevSession = useSessionStore.getState().sessions[msg.session.id];
           setSession(msg.session);
+          if (isProcessing) {
+            const shortPrompt =
+              msg.session.prompt.length > 60
+                ? `${msg.session.prompt.slice(0, 57)}...`
+                : msg.session.prompt;
+
+            // New session spawned (not seen before, or just transitioned to running)
+            if (
+              msg.session.status === 'running' &&
+              (!prevSession || prevSession.status === 'queued')
+            ) {
+              addActivity({
+                id: `spawned-${msg.session.id}`,
+                text: `Worker started: ${shortPrompt}`,
+                sessionId: msg.session.id,
+                timestamp: Date.now(),
+              });
+            }
+            // Session finished
+            if (msg.session.status === 'completed' || msg.session.status === 'failed') {
+              const verb = msg.session.status === 'completed' ? 'completed' : 'failed';
+              addActivity({
+                id: `done-${msg.session.id}`,
+                text: `Worker ${verb}: ${shortPrompt}`,
+                sessionId: msg.session.id,
+                timestamp: Date.now(),
+              });
+            }
+            // Session blocked — needs user input
+            if (msg.session.status === 'needs_input' || msg.session.status === 'auth_required') {
+              addActivity({
+                id: `blocker-${msg.session.id}`,
+                text: 'Worker needs your input — click to open terminal',
+                sessionId: msg.session.id,
+                timestamp: Date.now(),
+              });
+            }
+          }
           break;
+        }
         case 'session_removed':
           removeSession(msg.sessionId);
           break;
@@ -47,8 +89,6 @@ export function useDashboardWs() {
           queryClient.invalidateQueries({ queryKey: ['sessions'] });
           break;
         case 'status_changed':
-          // Session status changed — sessions will be updated via session_update
-          // This event is useful for triggering blocker UI in Vigil chat
           break;
         case 'memory_updated':
           queryClient.invalidateQueries({ queryKey: ['memory'] });

@@ -64,6 +64,9 @@ pub async fn run(port: u16) -> Result<()> {
 
     let vigil_handle = deps.vigil_service.clone().start();
 
+    let telegram_poller = services::telegram_poller::TelegramPoller::new(&deps);
+    let telegram_poller_handle = telegram_poller.start();
+
     // Handle ctrl+c by triggering the shutdown channel.
     let shutdown_tx = deps.shutdown_tx.clone();
     tokio::spawn(async move {
@@ -98,6 +101,7 @@ pub async fn run(port: u16) -> Result<()> {
     cleanup_handle.abort();
     memory_decay_handle.abort();
     vigil_handle.abort();
+    telegram_poller_handle.abort();
 
     tracing::info!("praefectus daemon stopped");
     Ok(())
