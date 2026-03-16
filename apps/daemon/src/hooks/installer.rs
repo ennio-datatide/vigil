@@ -18,7 +18,7 @@ printf '{"session_id":"%s","data":%s}' "$SESSION_ID" "$INPUT" > "$TMPFILE"
 curl -s -X POST "http://localhost:__SERVER_PORT__/events" \
   -H "Content-Type: application/json" \
   -d @"$TMPFILE" \
-  > /dev/null 2>&1 &
+  > /dev/null 2>&1
 "#;
 
 /// Claude Code `settings.json` template that wires all lifecycle hooks to
