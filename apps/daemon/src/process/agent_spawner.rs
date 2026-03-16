@@ -66,6 +66,10 @@ impl AgentSpawner {
         // Prepare working directory, hooks, and DB state.
         let (work_dir, store) = self.prepare_session(session).await?;
 
+        // Pre-create Claude Code project directory for this worktree so the
+        // "trust this folder?" prompt is skipped on first run.
+        pre_trust_directory(&work_dir);
+
         // Spawn claude inside a real PTY.
         let (master, child, reader, writer) =
             match spawn_claude_pty(&work_dir, continue_session) {
@@ -117,12 +121,15 @@ impl AgentSpawner {
             )
             .await;
 
-        // Send initial prompt as input (like a human typing it).
-        let prompt = format!("{}\r", session.prompt);
-        stdin_tx
-            .send(prompt.into_bytes())
-            .await
-            .map_err(|_| anyhow::anyhow!("Failed to send initial prompt"))?;
+        // Send initial prompt after a delay to let the TUI initialize.
+        // The trust dialog is skipped via pre_trust_directory() above.
+        let prompt_text = session.prompt.clone();
+        let tx = stdin_tx.clone();
+        tokio::spawn(async move {
+            // Wait for Claude Code TUI to finish rendering
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let _ = tx.send(format!("{prompt_text}\r").into_bytes()).await;
+        });
 
         // Spawn exit monitor — polls alive flag set by reader thread on EOF.
         Self::spawn_exit_monitor(
@@ -502,6 +509,23 @@ fn wire_pty_io(
     });
 
     (stdin_tx, reader_handle)
+}
+
+// ---------------------------------------------------------------------------
+// Trust pre-creation
+// ---------------------------------------------------------------------------
+
+/// Pre-create the Claude Code project directory for a working directory so the
+/// "trust this folder?" prompt is skipped. Claude Code stores per-project data
+/// in `~/.claude/projects/<encoded-path>/`. The presence of this directory
+/// signals that the project was previously trusted.
+fn pre_trust_directory(work_dir: &str) {
+    if let Some(home) = dirs::home_dir() {
+        // Encode path: replace / with - and prepend -
+        let encoded = work_dir.replace('/', "-");
+        let project_dir = home.join(".claude").join("projects").join(&encoded);
+        let _ = std::fs::create_dir_all(&project_dir);
+    }
 }
 
 // ---------------------------------------------------------------------------
