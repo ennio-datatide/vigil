@@ -135,6 +135,16 @@ impl VigilManager {
         std::fs::create_dir_all(&self.vigil_dir)
             .map_err(|e| anyhow::anyhow!("failed to create vigil dir: {e}"))?;
 
+        // Initialize git repo if not already present — Claude Code requires
+        // a git repo to read project-level hooks from .claude/settings.json.
+        let git_dir = self.vigil_dir.join(".git");
+        if !git_dir.exists() {
+            let _ = std::process::Command::new("git")
+                .args(["init"])
+                .current_dir(&self.vigil_dir)
+                .output();
+        }
+
         // Write MCP config.
         let mcp_config_path = self.vigil_dir.join("mcp-config.json");
         let daemon_url = format!("http://localhost:{}", self.config.server_port);
@@ -152,6 +162,16 @@ impl VigilManager {
             &self.session_id,
             self.config.server_port,
         )?;
+
+        // Commit config files so Claude Code recognizes this as a project.
+        let _ = std::process::Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&self.vigil_dir)
+            .output();
+        let _ = std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "vigil config"])
+            .current_dir(&self.vigil_dir)
+            .output();
 
         // Spawn PTY.
         let (master, child, reader, writer) =
@@ -217,16 +237,13 @@ impl VigilManager {
                     // Extract response from Stop payload.
                     // The hook payload wraps the Claude Code hook data under
                     // `data.stop_hook_result.result` or directly as `result`.
+                    // The Stop hook payload has `last_assistant_message`
+                    // containing Claude's response text.
                     let response = payload
                         .as_ref()
                         .and_then(|p| {
-                            // Try nested path first.
-                            p.get("stop_hook_result")
-                                .and_then(|r| r.get("result"))
+                            p.get("last_assistant_message")
                                 .and_then(|r| r.as_str())
-                                .or_else(|| {
-                                    p.get("result").and_then(|r| r.as_str())
-                                })
                         })
                         .unwrap_or("")
                         .to_string();
