@@ -118,7 +118,7 @@ impl AgentSpawner {
             .await;
 
         // Send initial prompt as input (like a human typing it).
-        let prompt = format!("{}\n", session.prompt);
+        let prompt = format!("{}\r", session.prompt);
         stdin_tx
             .send(prompt.into_bytes())
             .await
@@ -204,7 +204,7 @@ impl AgentSpawner {
             .await;
 
         // Send the pipeline prompt as input.
-        let prompt_bytes = format!("{prompt}\n");
+        let prompt_bytes = format!("{prompt}\r");
         stdin_tx
             .send(prompt_bytes.into_bytes())
             .await
