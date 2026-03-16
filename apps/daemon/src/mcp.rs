@@ -85,6 +85,14 @@ fn default_wait() -> bool {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub(crate) struct ReplyToWorkerArgs {
+    /// Session ID of the worker to reply to.
+    pub session_id: String,
+    /// The text to send as input to the worker's terminal.
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct ExecutePipelineArgs {
     /// Absolute path to the project directory.
     pub project_path: String,
@@ -344,21 +352,25 @@ impl VigilMcpServer {
         }
 
         // Wait for the worker to complete, polling every 3 seconds.
+        // If the worker needs input, return the question to Vigil so it can
+        // ask the user and relay the answer via reply_to_worker.
         let Some(ref sid) = session_id else {
             return Ok(CallToolResult::success(vec![Content::text(text)]));
         };
 
         let session_url = format!("{}/api/sessions/{sid}", self.daemon_url);
-        let max_wait = std::time::Duration::from_secs(240);
+        let max_wait = std::time::Duration::from_secs(600);
         let poll_interval = std::time::Duration::from_secs(3);
+        let progress_interval = std::time::Duration::from_secs(300); // 5 minutes
         let start = std::time::Instant::now();
+        let mut last_progress = std::time::Instant::now();
 
         loop {
             tokio::time::sleep(poll_interval).await;
 
             if start.elapsed() > max_wait {
                 return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Worker {sid} is still running after {}s. Check status with session_recall.",
+                    "Worker {sid} is still running after {}s. Use session_recall to check status, or reply_to_worker if it needs input.",
                     max_wait.as_secs()
                 ))]));
             }
@@ -376,18 +388,113 @@ impl VigilMcpServer {
             };
 
             let status_str = session["status"].as_str().unwrap_or("");
+            let output = session["output"].as_str().unwrap_or("");
+
             match status_str {
                 "completed" | "failed" | "cancelled" | "interrupted" => {
-                    // Session is done — return the full response including output.
-                    let output = session["output"].as_str().unwrap_or("(no output captured)");
                     let result = format!(
                         "Worker {sid} {status_str}.\n\nOutput:\n{output}"
                     );
                     return Ok(CallToolResult::success(vec![Content::text(result)]));
                 }
-                // "needs_input", "auth_required", "running", "queued" — keep
-                // polling. The auto-exit mechanism sends /exit after the Stop
-                // hook, transitioning to completed.
+                "needs_input" => {
+                    // Worker is asking a question — return it to Vigil so it
+                    // can ask the user and relay the answer.
+                    let result = format!(
+                        "Worker {sid} needs user input.\n\nThe worker is waiting for a response. Ask the user the question and then use reply_to_worker(session_id: \"{sid}\", message: \"<user's answer>\") to send their answer.\n\nWorker output so far:\n{output}"
+                    );
+                    return Ok(CallToolResult::success(vec![Content::text(result)]));
+                }
+                _ => {
+                    // Still running — report progress every 5 minutes.
+                    if last_progress.elapsed() > progress_interval {
+                        last_progress = std::time::Instant::now();
+                        let elapsed = start.elapsed().as_secs();
+                        tracing::info!(
+                            session_id = %sid,
+                            elapsed_s = elapsed,
+                            "worker still running — progress check"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reply to a worker session that needs input, then wait for it to complete.
+    /// Sends the message as keystrokes to the worker's terminal, then polls
+    /// until the worker finishes or needs input again.
+    #[tool(name = "reply_to_worker", description = "Send a reply to a worker that needs user input, then wait for it to complete. If the worker asks another question, returns with needs_input again. Repeat the cycle: ask user, reply_to_worker, until the worker completes.")]
+    async fn reply_to_worker(
+        &self,
+        Parameters(args): Parameters<ReplyToWorkerArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        // Send the reply to the worker's PTY.
+        let url = format!(
+            "{}/api/sessions/{}/input",
+            self.daemon_url, args.session_id
+        );
+        let body = serde_json::json!({ "input": args.message });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| McpError::internal_error(format!("HTTP request failed: {e}"), None))?;
+
+        if !response.status().is_success() {
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "Failed to send reply: {text}"
+            ))]));
+        }
+
+        // Now poll for completion (same logic as spawn_worker wait loop).
+        let sid = &args.session_id;
+        let session_url = format!("{}/api/sessions/{sid}", self.daemon_url);
+        let max_wait = std::time::Duration::from_secs(600);
+        let poll_interval = std::time::Duration::from_secs(3);
+        let start = std::time::Instant::now();
+
+        loop {
+            tokio::time::sleep(poll_interval).await;
+
+            if start.elapsed() > max_wait {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Worker {sid} is still running after {}s. Use session_recall to check status.",
+                    max_wait.as_secs()
+                ))]));
+            }
+
+            let Ok(resp) = self.client.get(&session_url).send().await else {
+                continue;
+            };
+            let Ok(body) = resp.text().await else {
+                continue;
+            };
+            let Ok(session) = serde_json::from_str::<serde_json::Value>(&body) else {
+                continue;
+            };
+
+            let status_str = session["status"].as_str().unwrap_or("");
+            let output = session["output"].as_str().unwrap_or("");
+
+            match status_str {
+                "completed" | "failed" | "cancelled" | "interrupted" => {
+                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                        "Worker {sid} {status_str}.\n\nOutput:\n{output}"
+                    ))]));
+                }
+                "needs_input" => {
+                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                        "Worker {sid} needs input again.\n\nAsk the user the question and use reply_to_worker to send their answer.\n\nWorker output:\n{output}"
+                    ))]));
+                }
                 _ => {}
             }
         }

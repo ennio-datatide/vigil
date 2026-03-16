@@ -302,3 +302,44 @@ fn status_display(s: &SessionStatus) -> &'static str {
         SessionStatus::Interrupted => "interrupted",
     }
 }
+
+// ---------------------------------------------------------------------------
+// Send input to session PTY
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct SendInputBody {
+    pub input: String,
+}
+
+/// `POST /api/sessions/:id/input` — send text input to a session's PTY.
+///
+/// Writes the message + carriage return to the session's terminal, as if
+/// the user typed it. Used by Vigil's `reply_to_worker` MCP tool to relay
+/// user answers to workers that need input.
+pub(crate) async fn send_input(
+    State(deps): State<AppDeps>,
+    Path(id): Path<String>,
+    Json(body): Json<SendInputBody>,
+) -> impl IntoResponse {
+    // Write to PTY (append \r for Enter key)
+    let data = format!("{}\r", body.input);
+    if let Err(e) = deps.pty_manager.write(&id, data.into_bytes()).await {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() }))).into_response();
+    }
+
+    // Update status back to running if it was needs_input
+    let store = crate::services::session_store::SessionStore::new(
+        std::sync::Arc::clone(&deps.db),
+    );
+    if let Ok(Some(session)) = store.get(&id).await
+        && (session.status == SessionStatus::NeedsInput
+            || session.status == SessionStatus::AuthRequired)
+    {
+        let _ = store
+            .update_status(&id, SessionStatus::Running, None, None)
+            .await;
+    }
+
+    Json(json!({ "ok": true })).into_response()
+}

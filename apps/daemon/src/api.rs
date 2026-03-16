@@ -36,6 +36,7 @@ pub fn router(deps: AppDeps) -> Router {
         .route("/sessions/{id}/remove", delete(sessions::remove_session))
         .route("/sessions/{id}/restart", post(sessions::restart_session))
         .route("/sessions/{id}/resume", post(sessions::resume_session))
+        .route("/sessions/{id}/input", post(sessions::send_input))
         .route(
             "/sessions/{id}/children",
             get(sub_sessions::list_children),
