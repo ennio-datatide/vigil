@@ -93,7 +93,7 @@ impl VigilManager {
         // Write message to Vigil PTY.
         if let Err(e) = self
             .pty_manager
-            .write(&self.session_id, format!("{message}\n").into_bytes())
+            .write(&self.session_id, format!("{message}\r").into_bytes())
             .await
         {
             self.busy.store(false, Ordering::Release);
@@ -185,6 +185,16 @@ impl VigilManager {
             .await;
 
         tracing::info!(session_id = %self.session_id, "Vigil PTY spawned");
+
+        // Auto-accept the "trust this folder" prompt that Claude Code shows
+        // on first run in a new directory. The TUI default selection is
+        // "Yes, I trust this folder" — just send Enter to confirm.
+        let pty_mgr = Arc::clone(&self.pty_manager);
+        let sid = self.session_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let _ = pty_mgr.write(&sid, b"\r".to_vec()).await;
+        });
 
         Ok(())
     }
@@ -290,7 +300,7 @@ impl VigilManager {
 
             let _ = self
                 .pty_manager
-                .write(&self.session_id, format!("{context}\n").into_bytes())
+                .write(&self.session_id, format!("{context}\r").into_bytes())
                 .await;
         }
     }
