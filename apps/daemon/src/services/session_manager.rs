@@ -155,7 +155,7 @@ impl SessionManager {
             .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
-        if payload_str.contains("auth_required") || payload_str.contains("permission") {
+        if payload_str.contains("\"auth_required\"") || payload_str.contains("\"permission_required\"") {
             let store = SessionStore::new(self.db.clone());
             let session = store
                 .update_status(session_id, SessionStatus::AuthRequired, None, None)
