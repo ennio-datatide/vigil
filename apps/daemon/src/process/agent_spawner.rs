@@ -131,6 +131,15 @@ impl AgentSpawner {
             let _ = tx.send(format!("{prompt_text}\r").into_bytes()).await;
         });
 
+        // Listen for Stop hook event and send /exit to end the session.
+        // Workers are one-shot tasks — they should exit after responding.
+        // Without this, the interactive PTY stays alive waiting for more input.
+        Self::spawn_auto_exit_on_stop(
+            &session_id,
+            &self.event_bus,
+            Arc::clone(&self.pty_manager),
+        );
+
         // Spawn exit monitor — polls alive flag set by reader thread on EOF.
         Self::spawn_exit_monitor(
             &session_id,
@@ -216,6 +225,13 @@ impl AgentSpawner {
             .send(prompt_bytes.into_bytes())
             .await
             .map_err(|_| anyhow::anyhow!("Failed to send pipeline prompt"))?;
+
+        // Auto-exit worker after it responds.
+        Self::spawn_auto_exit_on_stop(
+            &session_id,
+            &self.event_bus,
+            Arc::clone(&self.pty_manager),
+        );
 
         // Spawn exit monitor.
         Self::spawn_exit_monitor(
@@ -330,6 +346,38 @@ impl AgentSpawner {
 
             pty_manager.remove(&sid).await;
             tracing::info!(session_id = %sid, "agent process exited");
+        });
+    }
+
+    /// Listen for the first `Stop` hook event on a worker session and send
+    /// `/exit\r` to its PTY so it exits cleanly. Workers are one-shot tasks
+    /// that should terminate after responding, but the interactive PTY stays
+    /// alive waiting for more input without this.
+    fn spawn_auto_exit_on_stop(
+        session_id: &str,
+        event_bus: &Arc<EventBus>,
+        pty_manager: Arc<PtyManager>,
+    ) {
+        let sid = session_id.to_owned();
+        let mut rx = event_bus.subscribe();
+
+        tokio::spawn(async move {
+            while let Ok(event) = rx.recv().await {
+                if let AppEvent::HookEvent {
+                    session_id,
+                    event_type,
+                    ..
+                } = &event
+                    && session_id == &sid
+                    && event_type == "Stop"
+                {
+                    // Give the TUI a moment to render the final output
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    let _ = pty_manager.write(&sid, b"/exit\r".to_vec()).await;
+                    tracing::info!(session_id = %sid, "auto-exit sent after Stop hook");
+                    break;
+                }
+            }
         });
     }
 
