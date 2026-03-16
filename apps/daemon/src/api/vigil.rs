@@ -62,6 +62,85 @@ pub(crate) struct ChatResult {
     pub response: String,
 }
 
+/// Check if any worker session is in `needs_input` state. If so, send the
+/// user's message to that worker's PTY and wait for it to complete or ask
+/// another question. Returns `None` if no worker is waiting.
+async fn try_reply_to_waiting_worker(
+    deps: &AppDeps,
+    message: &str,
+) -> Option<anyhow::Result<String>> {
+    use crate::db::models::SessionStatus;
+    use crate::services::session_store::SessionStore;
+
+    let store = SessionStore::new(std::sync::Arc::clone(&deps.db));
+
+    // Find the most recent session that needs input (not the vigil session).
+    let Ok(sessions) = store.list().await else {
+        return None;
+    };
+
+    let waiting = sessions
+        .iter()
+        .filter(|s| {
+            s.id != "vigil"
+                && (s.status == SessionStatus::NeedsInput
+                    || s.status == SessionStatus::AuthRequired)
+        })
+        .max_by_key(|s| s.started_at)?;
+
+    let sid = waiting.id.clone();
+    tracing::info!(
+        session_id = %sid,
+        "routing user message to waiting worker instead of Vigil"
+    );
+
+    // Send input to the worker's PTY.
+    let data = format!("{message}\r");
+    if let Err(e) = deps.pty_manager.write(&sid, data.into_bytes()).await {
+        return Some(Err(anyhow::anyhow!("failed to write to worker: {e}")));
+    }
+
+    // Update status back to running.
+    let _ = store
+        .update_status(&sid, SessionStatus::Running, None, None)
+        .await;
+
+    // Wait for the worker's Stop hook event which contains the clean
+    // response text in `last_assistant_message`. This is more reliable
+    // than parsing raw PTY output.
+    let mut rx = deps.event_bus.subscribe();
+    let max_wait = std::time::Duration::from_secs(600);
+
+    let result = tokio::time::timeout(max_wait, async {
+        while let Ok(event) = rx.recv().await {
+            if let crate::events::AppEvent::HookEvent {
+                session_id: ev_sid,
+                event_type,
+                payload,
+            } = &event
+                && ev_sid == &sid
+                && event_type == "Stop"
+            {
+                let response = payload
+                    .as_ref()
+                    .and_then(|p| p.get("last_assistant_message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                return response;
+            }
+        }
+        String::new()
+    })
+    .await;
+
+    match result {
+        Ok(response) if !response.is_empty() => Some(Ok(response)),
+        Ok(_) => Some(Ok("Worker finished but produced no response.".to_string())),
+        Err(_) => Some(Ok("Worker is still running. Check the session monitor.".to_string())),
+    }
+}
+
 /// Core Vigil chat logic — shared between the HTTP handler and the Telegram poller.
 ///
 /// Persists the user message, sends it to the persistent Vigil PTY via
@@ -88,6 +167,18 @@ pub(crate) async fn process_chat(
     if let Some(pp) = project_path {
         deps.vigil_service.ensure_vigil(pp).await;
         tracing::debug!(project_path = %pp, "vigil activated for project");
+    }
+
+    // Check if any worker session is waiting for input. If so, route the
+    // user's message directly to that worker instead of going through Vigil.
+    // This ensures multi-turn conversations stay on the same worker session.
+    if let Some(result) = try_reply_to_waiting_worker(deps, message).await {
+        let response = result?;
+        deps.vigil_chat_store
+            .save_message("vigil", &response, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        return Ok(ChatResult { response });
     }
 
     // Send to Vigil via persistent PTY.
