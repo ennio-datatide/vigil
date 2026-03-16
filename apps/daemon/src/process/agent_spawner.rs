@@ -138,6 +138,7 @@ impl AgentSpawner {
             &session_id,
             &self.event_bus,
             Arc::clone(&self.pty_manager),
+            Arc::clone(&self.db),
         );
 
         // Spawn exit monitor — polls alive flag set by reader thread on EOF.
@@ -231,6 +232,7 @@ impl AgentSpawner {
             &session_id,
             &self.event_bus,
             Arc::clone(&self.pty_manager),
+            Arc::clone(&self.db),
         );
 
         // Spawn exit monitor.
@@ -349,14 +351,16 @@ impl AgentSpawner {
         });
     }
 
-    /// Listen for the first `Stop` hook event on a worker session and send
-    /// `/exit\r` to its PTY so it exits cleanly. Workers are one-shot tasks
-    /// that should terminate after responding, but the interactive PTY stays
-    /// alive waiting for more input without this.
+    /// Listen for `Stop` hook events on a worker session. After each Stop,
+    /// wait 5 seconds — if no input is sent during that window (i.e. the
+    /// worker isn't in a `needs_input` conversation loop), send `/exit\r`
+    /// to terminate the session. If input arrives (via `reply_to_worker`),
+    /// the worker continues and we wait for the next Stop.
     fn spawn_auto_exit_on_stop(
         session_id: &str,
         event_bus: &Arc<EventBus>,
         pty_manager: Arc<PtyManager>,
+        db: Arc<crate::db::sqlite::SqliteDb>,
     ) {
         let sid = session_id.to_owned();
         let mut rx = event_bus.subscribe();
@@ -371,8 +375,29 @@ impl AgentSpawner {
                     && session_id == &sid
                     && event_type == "Stop"
                 {
-                    // Give the TUI a moment to render the final output
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    // Wait before sending /exit — give reply_to_worker time
+                    // to send input if this is a needs_input conversation.
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                    // Check if the session is still waiting for input (meaning
+                    // the spawn_worker polling detected needs_input and Vigil
+                    // is asking the user). If so, don't exit — wait for the
+                    // next Stop event after the user replies.
+                    let store = crate::services::session_store::SessionStore::new(
+                        Arc::clone(&db),
+                    );
+                    if let Ok(Some(session)) = store.get(&sid).await {
+                        if session.status == crate::db::models::SessionStatus::NeedsInput {
+                            tracing::info!(session_id = %sid, "skipping auto-exit — worker needs input");
+                            continue; // Wait for next Stop
+                        }
+                        if session.status == crate::db::models::SessionStatus::Running {
+                            // Worker resumed after reply — wait for next Stop
+                            continue;
+                        }
+                    }
+
+                    // Worker is done — send /exit
                     let _ = pty_manager.write(&sid, b"/exit\r".to_vec()).await;
                     tracing::info!(session_id = %sid, "auto-exit sent after Stop hook");
                     break;
