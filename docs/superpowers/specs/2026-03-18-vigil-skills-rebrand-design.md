@@ -5,7 +5,7 @@
 
 ## Problem
 
-Praefectus currently uses MCP tools (`pf mcp-serve` subprocess) to give Vigil its capabilities — `spawn_worker`, `memory_recall`, `session_recall`, etc. This requires a custom MCP server implementation (`mcp.rs`), MCP config files, the `--tools ""` flag to disable built-in tools, and the `rmcp` crate dependency. The strategy prompt is a hardcoded markdown file embedded via `--append-system-prompt-file`.
+Praefectus currently uses 8 MCP tools (`pf mcp-serve` subprocess) to give Vigil its capabilities — `spawn_worker`, `reply_to_worker`, `memory_recall`, `memory_save`, `memory_delete`, `session_recall`, `acta_update`, `execute_pipeline`. This requires a custom MCP server implementation (`mcp.rs`), MCP config files, the `--tools ""` flag to disable built-in tools, and the `rmcp` crate dependency. The strategy prompt is a hardcoded markdown file embedded via `--append-system-prompt-file`.
 
 This is inflexible: adding new capabilities requires modifying Rust code, recompiling, and redeploying. The Agent Skills specification (agentskills.io) provides a standard, open format for giving agents capabilities via markdown instruction documents with bundled scripts — no custom server needed.
 
@@ -13,7 +13,7 @@ Additionally, "Praefectus" is being rebranded to "Vigil" for a cleaner identity.
 
 ## Goal
 
-1. Replace all MCP tools with Agent Skills (SKILL.md + scripts that curl the daemon REST API)
+1. Replace all 8 MCP tools with Agent Skills (SKILL.md + scripts that curl the daemon REST API)
 2. Delete the MCP server entirely
 3. Rebrand Praefectus → Vigil across the entire codebase
 4. Restrict Vigil to Bash + Read tools only (workers keep full tools)
@@ -66,31 +66,40 @@ apps/daemon/skills/
 
 **9 Skills total:** 1 core identity + 8 tool skills (replacing 8 MCP tools).
 
-**At Vigil spawn time**, `spawn_vigil()` copies these skills into `~/.vigil/vigil/.claude/skills/`, commits them to git, and spawns Claude Code. Claude Code discovers them automatically via progressive disclosure:
+**At Vigil spawn time**, `spawn_vigil()` copies these skills into `~/.vigil/session/.claude/skills/`, commits them to git, and spawns Claude Code. Claude Code discovers them automatically via progressive disclosure:
 - **Tier 1 (catalog):** Name + description loaded at session start (~50-100 tokens per skill)
 - **Tier 2 (instructions):** Full SKILL.md loaded when the skill is activated
 - **Tier 3 (resources):** Scripts loaded on demand when instructions reference them
 
-### 2. Vigil Core Skill
+### 2. Vigil Core Skill — Bootstrapping
 
-The `vigil-core/SKILL.md` replaces `prompts/vigil-strategy.md`. It defines Vigil's identity, rules, and delegation logic but NOT tool-specific instructions — those live in each tool Skill's `description` field.
+The `vigil-core/SKILL.md` replaces `prompts/vigil-strategy.md`. It defines Vigil's identity, rules, and delegation logic.
+
+**Activation guarantee:** Claude Code only activates skills when a task matches the description. To ensure `vigil-core` is activated at session start, `spawn_vigil()` sends a bootstrap message to the PTY after the trust prompt is accepted:
+
+```
+Activate the vigil-core skill and begin your session.
+```
+
+This triggers Claude Code to match the `vigil-core` description and load the full SKILL.md. The bootstrap message is sent via the existing delayed-PTY-write mechanism (same pattern as the trust prompt auto-accept).
+
+**SKILL.md structure:**
 
 ```markdown
 ---
 name: vigil-core
-description: Core orchestration identity for Vigil. Activate immediately at session start. Defines delegation rules, communication style, and coordination behavior for the Vigil supervisor.
+description: Core orchestration identity for Vigil. Activate this skill when starting a session or when asked to act as Vigil. Defines delegation rules, communication style, and coordination behavior.
 ---
 
 # Vigil
 
 You are Vigil, a coordinator and supervisor...
 [Identity, rules, communication style, delegation logic]
+[Only use Bash and Read tools — never Write, Edit, or other tools]
+[Always delegate work via the spawn-worker skill]
 ```
 
-**Routing via descriptions:** Each tool Skill's `description` field tells Claude Code when to use it. For example:
-- `spawn-worker`: "Spawn a Claude Code worker session. Use for ALL user requests — jokes, questions, code, research, commands. Use --wait for quick tasks (<30s), omit for long-running tasks."
-- `reply-to-worker`: "Send the user's answer to a worker that needs input. Use when spawn-worker exits with code 2 (needs_input). Always use this instead of spawning a new worker."
-- `memory-recall`: "Search project memories by semantic similarity. Use when context about past decisions, preferences, or project history would help."
+**Routing via descriptions:** Each tool Skill's `description` field tells Claude Code when to use it. The catalog (all descriptions) is visible at session start, so Claude Code knows what's available without activating every skill.
 
 ### 3. Skill Script Design
 
@@ -100,7 +109,6 @@ All scripts follow the Agent Skills spec best practices:
 - Structured JSON output to stdout
 - Meaningful error messages to stderr
 - `--help` support
-- Meaningful exit codes
 
 **Environment:**
 - `VIGIL_DAEMON_URL` env var set by `spawn_vigil()` (defaults to `http://localhost:8000`)
@@ -113,48 +121,45 @@ All scripts follow the Agent Skills spec best practices:
 DAEMON_URL="${VIGIL_DAEMON_URL:-http://localhost:8000}"
 ```
 
-**Key exit codes for spawn-worker and reply-to-worker:**
+**Status signaling via JSON stdout (not exit codes):**
 
-| Exit Code | Meaning |
-|-----------|---------|
-| 0 | Worker completed successfully, output in stdout |
-| 1 | Error (API failure, timeout, etc.) |
-| 2 | Worker needs user input — question in stdout |
+All scripts exit 0 on success. The `status` field in the JSON output signals the result. This is more reliable than exit codes for agent consumption — Claude Code reliably reads JSON from stdout but exit code interpretation is fragile.
 
-Exit code 2 is the signal for the `needs_input` flow. The `spawn-worker` Skill instructions tell Claude Code: "If the script exits with code 2, read the output (the worker's question), ask the user, then use the reply-to-worker skill."
+**spawn.sh output for each terminal state:**
+
+| Session Status | JSON Output | Script Exit |
+|----------------|-------------|-------------|
+| `completed` | `{"session_id":"...","status":"completed","output":"..."}` | 0 |
+| `failed` | `{"session_id":"...","status":"failed","output":"...","error":"..."}` | 0 |
+| `cancelled` | `{"session_id":"...","status":"cancelled","output":"..."}` | 0 |
+| `interrupted` | `{"session_id":"...","status":"interrupted","output":"..."}` | 0 |
+| `needs_input` | `{"session_id":"...","status":"needs_input","question":"..."}` | 0 |
+| Timeout (600s) | `{"session_id":"...","status":"timeout","message":"Worker still running after 600s. Use session-recall to check status."}` | 0 |
+| API error | Error message to stderr | 1 |
+
+Exit code 1 is reserved for actual script failures (network error, malformed response). All business-logic states (including needs_input) use exit 0 with structured JSON.
+
+The `spawn-worker` SKILL.md instructions tell Claude Code: "If the output JSON has `status: needs_input`, read the `question` field, ask the user, then use the reply-to-worker skill with the session_id."
 
 **spawn.sh behavior:**
-1. `POST /api/sessions` with project_path + prompt → creates session
+1. `POST /api/sessions` with `--project-path` and `--prompt` → creates session
 2. If `--wait` flag: poll `GET /api/sessions/:id` every 3 seconds
-   - `completed`/`failed` → print output JSON, exit 0 or 1
-   - `needs_input` → print question JSON, exit 2
-   - Timeout after 600s → print status, exit 1
-3. If no `--wait`: print session_id immediately, exit 0
+   - Terminal state → print JSON with output, exit 0
+   - `needs_input` → print JSON with question, exit 0
+   - Non-200 API response → retry silently (keep polling)
+   - Timeout after 600s → print timeout JSON, exit 0
+3. If no `--wait`: print `{"session_id":"...","status":"queued"}` immediately, exit 0
 
 **reply.sh behavior:**
-1. `POST /api/sessions/:id/input` with message
-2. Poll `GET /api/sessions/:id` every 3 seconds (same as spawn.sh wait loop)
-3. Same exit code semantics
+1. `POST /api/sessions/:id/input` with `--session-id` and `--message`
+2. Poll `GET /api/sessions/:id` every 3 seconds (same loop as spawn.sh)
+3. Same JSON output format and exit semantics
 
-**Output format (JSON):**
-
-```json
-{
-  "session_id": "abc-123",
-  "status": "completed",
-  "output": "The answer is 42."
-}
-```
-
-For `needs_input` (exit code 2):
-
-```json
-{
-  "session_id": "abc-123",
-  "status": "needs_input",
-  "question": "What is your budget?"
-}
-```
+**spawn.sh optional flags:**
+- `--project-path <path>` (required) — project directory
+- `--prompt <text>` (required) — task for the worker
+- `--wait` — block until completion (default: no wait)
+- `--skill <name>` — optional skill to assign (forward-compatible, currently unused)
 
 ### 4. Vigil Spawn Changes
 
@@ -165,15 +170,18 @@ For `needs_input` (exit code 2):
 4. Spawn with `--mcp-config`, `--tools ""`, `--append-system-prompt-file`
 
 **New spawn_vigil():**
-1. Create `~/.vigil/vigil/` directory + git init (if needed)
+1. Create `~/.vigil/session/` directory + git init (if needed)
 2. Install hooks (unchanged)
-3. **Copy all Skills from `apps/daemon/skills/` into `~/.vigil/vigil/.claude/skills/`**
-4. Set `VIGIL_DAEMON_URL` in the environment
-5. Git add + commit so Claude Code discovers the skills
-6. Spawn `claude` with: `--verbose`, `--dangerously-skip-permissions`
-7. No `--mcp-config`, no `--tools ""`, no `--append-system-prompt-file`
+3. **Copy all Skills from `apps/daemon/skills/` into `~/.vigil/session/.claude/skills/`**
+4. **Clean up stale files:** remove `mcp-config.json` and `strategy.md` if present (leftover from pre-Skills architecture)
+5. Set `VIGIL_DAEMON_URL` in the PTY environment
+6. Git add + commit so Claude Code discovers the skills
+7. Spawn `claude` with: `--verbose`, `--dangerously-skip-permissions`
+8. Auto-accept trust prompt (Enter after 2s, unchanged)
+9. **Send bootstrap message** after 5s: `"Activate the vigil-core skill and begin your session.\r"`
+10. No `--mcp-config`, no `--tools ""`, no `--append-system-prompt-file`
 
-**Tool restriction:** Vigil spawns with only Bash and Read tools enabled. Workers keep their full tool set. The exact flag depends on Claude Code's CLI — either `--allowlist-tools` or equivalent. If no such flag exists, the vigil-core Skill instructions explicitly state to only use Bash and Read.
+**Tool restriction:** The vigil-core Skill instructions explicitly state: "You may ONLY use Bash and Read tools. Never use Write, Edit, Grep, Glob, WebFetch, or any other tool." This is an instruction-level restriction. Claude Code does not currently support `--allowlist-tools` as a CLI flag, so instruction-only restriction is the approach. The risk is that Vigil could ignore this instruction — but the same risk existed with the MCP approach (Vigil could have used built-in tools despite `--tools ""`). In practice, the strategy prompt has been effective at controlling behavior.
 
 ### 5. Removed Code
 
@@ -181,13 +189,14 @@ For `needs_input` (exit code 2):
 |------|------|-----|
 | MCP server implementation | `src/mcp.rs` | Replaced by Skills |
 | MCP arg structs | `src/mcp.rs` | No longer needed |
-| `pf mcp-serve` CLI command | `src/main.rs`, `src/cli.rs` | No MCP server |
+| `vigil mcp-serve` CLI command | `src/main.rs`, `src/cli.rs` | No MCP server |
 | `write_mcp_config()` | `src/services/vigil_manager.rs` | No MCP config |
 | `--mcp-config` spawn arg | `src/services/vigil_manager.rs` | Skills replace MCP |
 | `--tools ""` spawn arg | `src/services/vigil_manager.rs` | Vigil needs Bash+Read |
 | `--append-system-prompt-file` | `src/services/vigil_manager.rs` | vigil-core Skill replaces it |
 | `prompts/vigil-strategy.md` | `prompts/` | Moved to `skills/vigil-core/SKILL.md` |
 | `rmcp` crate dependency | `Cargo.toml` | No MCP server |
+| `schemars` crate dependency | `Cargo.toml` | Only used by MCP arg structs |
 
 ### 6. Preserved Code
 
@@ -210,32 +219,38 @@ For `needs_input` (exit code 2):
 | `~/.praefectus/` | `~/.vigil/` |
 | `praefectus-daemon` (Cargo crate) | `vigil-daemon` |
 | `@praefectus/web` (npm workspace) | `@vigil/web` |
+| `praefectus_home` (Config field) | `vigil_home` |
 | `PRAEFECTUS_AUTH_TOKEN` | `VIGIL_AUTH_TOKEN` |
+| `PRAEFECTUS_DASHBOARD_URL` | `VIGIL_DASHBOARD_URL` |
 | `PRAEFECTUS_DAEMON_URL` | `VIGIL_DAEMON_URL` |
 | `praefectus.db` | `vigil.db` |
 | `~/.praefectus/worktrees/` | `~/.vigil/worktrees/` |
 | `~/.praefectus/logs/` | `~/.vigil/logs/` |
-| `~/.praefectus/vigil/` | `~/.vigil/vigil/` (Vigil PTY working dir) |
+| `~/.praefectus/vigil/` | `~/.vigil/session/` (Vigil PTY working dir) |
 | Log messages: "praefectus" | "vigil" |
 | Dashboard title: "Praefectus" | "Vigil" |
 | CLAUDE.md references | Updated |
 
-**Migration:** On first `vigil up`, if `~/.praefectus/` exists and `~/.vigil/` doesn't, move it automatically with a log message: "Migrating ~/.praefectus → ~/.vigil".
+**Migration:** On first `vigil up`, if `~/.praefectus/` exists and `~/.vigil/` doesn't:
+1. Move `~/.praefectus/` → `~/.vigil/` with log message: "Migrating ~/.praefectus → ~/.vigil"
+2. Remove stale files: `~/.vigil/session/mcp-config.json`, `~/.vigil/session/strategy.md`
+3. Rename `vigil.db` if it was `praefectus.db`
 
 ### 8. Worker Skills (Future)
 
-Workers currently spawn with full Claude Code tools and no Skills. In the future, workers could also receive Skills tailored to their task (e.g., project-specific coding standards, testing patterns). This is out of scope for this design but the architecture supports it — `spawn_interactive()` could copy relevant Skills into the worktree's `.claude/skills/` before spawning.
+Workers currently spawn with full Claude Code tools and no Skills. In the future, workers could also receive Skills tailored to their task (e.g., project-specific coding standards, testing patterns). The `--skill` flag on `spawn.sh` is included for forward compatibility. This is out of scope for this design but the architecture supports it — `spawn_interactive()` could copy relevant Skills into the worktree's `.claude/skills/` before spawning.
 
 ## Testing Strategy
 
 **Unit tests:**
 - Skill script tests: run each script with mock API responses (using a test HTTP server or mocked curl)
-- Verify exit codes: 0 for success, 1 for error, 2 for needs_input
+- Verify JSON output format for all terminal states (completed, failed, cancelled, interrupted, needs_input, timeout)
 
 **Integration tests:**
 - Full flow: user message → Vigil activates spawn-worker skill → script runs → worker completes → response returned
-- needs_input flow: spawn-worker exits 2 → Vigil asks user → reply-to-worker → completion
+- needs_input flow: spawn-worker returns `{"status":"needs_input"}` → Vigil asks user → reply-to-worker → completion
 - Verify Skills are discovered by Claude Code (check catalog)
+- Bootstrap message activates vigil-core skill
 
 **E2E tests (same as current):**
 - Jokes with probability
@@ -246,6 +261,6 @@ Workers currently spawn with full Claude Code tools and no Skills. In the future
 ## Non-Goals
 
 - Publishing Skills to skills.sh marketplace (can be done later)
-- Worker-specific Skills (future enhancement)
+- Worker-specific Skills (future enhancement beyond --skill flag)
 - Removing the Rust daemon (it stays for PTY management, DB, hooks, API)
-- Changing the Next.js frontend (only rebrand text/titles)
+- Changing the Next.js frontend beyond rebrand text/titles
