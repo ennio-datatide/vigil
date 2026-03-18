@@ -30,7 +30,7 @@ lancedb = "0.26"
 lance-index = "2.0"
 fastembed = "4"
 redb = "2.4"
-arrow-array = "57"
+arrow-array = "58"
 arrow-schema = "57"
 
 # CLI
