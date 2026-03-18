@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use reqwest::Client;
 
-use crate::api::settings::TelegramConfig;
+use crate::services::settings_store::TelegramConfig;
 use crate::db::models::SessionStatus;
 use crate::db::sqlite::SqliteDb;
 use crate::deps::AppDeps;

@@ -5,8 +5,23 @@
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::db::sqlite::SqliteDb;
 use crate::error::{DbError, Result};
+
+/// Telegram notification configuration persisted in the settings store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TelegramConfig {
+    pub bot_token: String,
+    pub chat_id: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub events: Vec<String>,
+    #[serde(default)]
+    pub dashboard_url: String,
+}
 
 /// Generic key-value store backed by the `settings` table.
 #[derive(Clone, Debug)]

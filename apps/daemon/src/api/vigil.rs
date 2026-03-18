@@ -314,13 +314,6 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
-    fn get(uri: &str) -> Request<Body> {
-        Request::builder()
-            .uri(uri)
-            .body(Body::empty())
-            .unwrap()
-    }
-
     fn post_json(uri: &str, body: &serde_json::Value) -> Request<Body> {
         Request::builder()
             .method("POST")
@@ -328,60 +321,6 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_vec(body).unwrap()))
             .unwrap()
-    }
-
-    #[tokio::test]
-    async fn get_status_returns_empty() {
-        let (app, _dir) = test_app().await;
-
-        let resp = app.oneshot(get("/api/vigil/status")).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let json = json_body(resp).await;
-        let projects = json["activeProjects"].as_array().expect("should be array");
-        assert!(projects.is_empty(), "no vigils should be active initially");
-    }
-
-    #[tokio::test]
-    async fn update_and_get_acta() {
-        let (app, _dir) = test_app().await;
-
-        // Update acta.
-        let body = serde_json::json!({
-            "projectPath": "/tmp/acta-test",
-            "content": "This is the project briefing."
-        });
-        let req = Request::builder()
-            .method("PUT")
-            .uri("/api/vigil/acta")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&body).unwrap()))
-            .unwrap();
-        let resp = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        // Get acta should return the content.
-        let resp = app
-            .oneshot(get("/api/vigil/acta?projectPath=%2Ftmp%2Facta-test"))
-            .await
-            .unwrap();
-        let json = json_body(resp).await;
-        assert_eq!(json["acta"], "This is the project briefing.");
-    }
-
-    #[tokio::test]
-    async fn get_acta_returns_null_for_unknown() {
-        let (app, _dir) = test_app().await;
-
-        let resp = app
-            .oneshot(get("/api/vigil/acta?projectPath=%2Funknown"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let json = json_body(resp).await;
-        assert_eq!(json["projectPath"], "/unknown");
-        assert!(json["acta"].is_null(), "acta should be null for unknown project");
     }
 
     #[tokio::test]
@@ -402,70 +341,29 @@ mod tests {
 
     #[tokio::test]
     async fn chat_persists_user_message_even_on_error() {
-        let (app, _dir) = test_app().await;
-
         // Chat will fail (no PTY), but user message should be persisted.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config = crate::config::Config::for_testing(dir.path());
+        let deps = AppDeps::new(config).await.expect("test deps");
+
         let body = serde_json::json!({ "message": "Hello from test" });
+        let app = api::router(deps.clone());
         let _ = app
-            .clone()
             .oneshot(post_json("/api/vigil/chat", &body))
             .await
             .unwrap();
 
-        // Retrieve history — should have at least the user message.
-        let resp = app
-            .oneshot(get("/api/vigil/history"))
+        // Check history directly via the store (not via HTTP since /history route is removed).
+        let messages = deps
+            .vigil_chat_store
+            .list_messages(100, 0)
             .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let json = json_body(resp).await;
-        let messages = json["messages"].as_array().expect("should be array");
+            .expect("list messages");
         assert!(
             !messages.is_empty(),
             "user message should be persisted even when Vigil PTY is unavailable"
         );
-        assert_eq!(messages[0]["role"], "user");
-        assert_eq!(messages[0]["content"], "Hello from test");
-    }
-
-    #[tokio::test]
-    async fn history_pagination_works() {
-        let (app, _dir) = test_app().await;
-
-        // Directly save messages via the store to test pagination without PTY.
-        let dir = tempfile::TempDir::new().unwrap();
-        let config = crate::config::Config::for_testing(dir.path());
-        let deps = AppDeps::new(config).await.unwrap();
-
-        for i in 0..4 {
-            deps.vigil_chat_store
-                .save_message("user", &format!("msg {i}"), None)
-                .await
-                .unwrap();
-        }
-
-        let router = api::router(deps);
-
-        // Get with limit=2, offset=0.
-        let resp = router
-            .clone()
-            .oneshot(get("/api/vigil/history?limit=2&offset=0"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let json = json_body(resp).await;
-        let messages = json["messages"].as_array().unwrap();
-        assert_eq!(messages.len(), 2);
-
-        // Get with limit=2, offset=2.
-        let resp = router
-            .oneshot(get("/api/vigil/history?limit=2&offset=2"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let json = json_body(resp).await;
-        let messages = json["messages"].as_array().unwrap();
-        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Hello from test");
     }
 }

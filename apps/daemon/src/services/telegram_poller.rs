@@ -6,7 +6,7 @@
 
 use reqwest::Client;
 
-use crate::api::settings::TelegramConfig;
+use crate::services::settings_store::TelegramConfig;
 use crate::deps::AppDeps;
 use crate::services::settings_store::SettingsStore;
 
