@@ -30,6 +30,103 @@ use tracing_subscriber::EnvFilter;
 use crate::config::Config;
 use crate::deps::AppDeps;
 
+/// Boot the TUI with embedded daemon services.
+///
+/// Sets up file-only logging (stdout is owned by ratatui), starts all
+/// background services, spawns the HTTP server as a background task, then
+/// hands control to the TUI event loop.
+///
+/// # Errors
+///
+/// Returns an error if configuration resolution, database connection, or the
+/// TCP listener fails, or if the TUI event loop encounters an unrecoverable
+/// error.
+pub async fn run_tui(port: u16) -> color_eyre::Result<()> {
+    color_eyre::install()?;
+
+    // File-only logging so ratatui owns stdout.
+    let log_dir = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".vigil/logs");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "vigil.log");
+    tracing_subscriber::fmt()
+        .with_writer(file_appender)
+        .with_ansi(false)
+        .init();
+
+    let cancel = tokio_util::sync::CancellationToken::new();
+
+    let config = Config::resolve(port)?;
+    let deps = AppDeps::new(config).await?;
+
+    // Run recovery — mark orphaned sessions from a previous crash.
+    let recovery = services::recovery::RecoveryService::new(&deps);
+    if let Err(e) = recovery.run().await {
+        tracing::error!(error = %e, "recovery failed");
+    }
+
+    // Start background services.
+    let session_mgr = services::session_manager::SessionManager::new(&deps);
+    let session_mgr_handle = session_mgr.start();
+
+    let notifier = services::notifier::TelegramNotifier::new(&deps);
+    let notifier_handle = notifier.start();
+
+    let cleanup = services::cleanup::CleanupService::new(&deps);
+    let cleanup_handle = cleanup.start();
+
+    let memory_decay = services::memory_decay::MemoryDecayService::new(&deps);
+    let memory_decay_handle = memory_decay.start();
+
+    let vigil_handle = deps.vigil_service.clone().start();
+
+    let telegram_poller = services::telegram_poller::TelegramPoller::new(&deps);
+    let telegram_poller_handle = telegram_poller.start();
+
+    let vigil_manager = Arc::clone(&deps.vigil_manager);
+    let vigil_manager_handle = tokio::spawn(async move {
+        if let Err(e) = vigil_manager.start().await {
+            tracing::error!(error = %e, "Failed to start Vigil persistent PTY");
+        }
+    });
+
+    // Spawn the HTTP server as a background task so the TUI owns the main task.
+    let server_cancel = cancel.clone();
+    let server_deps = deps.clone();
+    let _server_handle = tokio::spawn(async move {
+        let router = api::router(server_deps);
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        match TcpListener::bind(addr).await {
+            Ok(listener) => {
+                tracing::info!(%addr, "TUI daemon HTTP listener ready");
+                axum::serve(listener, router)
+                    .with_graceful_shutdown(server_cancel.cancelled_owned())
+                    .await
+                    .ok();
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to bind HTTP listener");
+            }
+        }
+    });
+
+    // Run the TUI as the main task.
+    let terminal = ratatui::init();
+    let result = tui::app::run(terminal, cancel).await;
+    ratatui::restore();
+
+    // Clean up background tasks.
+    session_mgr_handle.abort();
+    notifier_handle.abort();
+    cleanup_handle.abort();
+    memory_decay_handle.abort();
+    vigil_handle.abort();
+    telegram_poller_handle.abort();
+    vigil_manager_handle.abort();
+
+    result
+}
+
 /// Boot the daemon server on the given port.
 ///
 /// # Errors

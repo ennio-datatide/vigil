@@ -54,6 +54,7 @@ ratatui = "0.30"
 tui-term = "0.3"
 color-eyre = "0.6"
 tokio-util = { version = "0.7", features = ["rt"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Common types
 uuid = { version = "1.15", features = ["v4", "serde"] }

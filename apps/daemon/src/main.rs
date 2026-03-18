@@ -28,5 +28,10 @@ async fn main() -> anyhow::Result<()> {
         Command::Status => vigil_daemon::cli::cmd_status().await,
         Command::Cleanup => vigil_daemon::cli::cmd_cleanup().await,
         Command::ClearHistory => vigil_daemon::cli::cmd_clear_history().await,
+        Command::Tui { port } => {
+            vigil_daemon::run_tui(port)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))
+        }
     }
 }

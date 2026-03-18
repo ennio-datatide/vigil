@@ -59,6 +59,12 @@ pub enum Command {
     Cleanup,
     /// Clear Vigil chat history.
     ClearHistory,
+    /// Launch the interactive TUI (daemon embedded).
+    Tui {
+        /// Port for the background HTTP server.
+        #[arg(long, default_value_t = 8000)]
+        port: u16,
+    },
 }
 
 /// Execute the `up` subcommand — verify Claude Code auth, then start the daemon.
