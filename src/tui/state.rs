@@ -28,6 +28,7 @@ pub struct App {
     pub previous_view: Option<View>,
     pub sessions: Vec<Session>,
     pub selected_session: usize,
+    pub setup_selection: usize,
     pub chat_messages: Vec<ChatMessage>,
     pub chat_input: String,
     pub chat_tx: Option<tokio::sync::mpsc::Sender<String>>,
@@ -50,6 +51,7 @@ pub struct ChatMessage {
 pub enum ChatSender {
     User,
     Vigil,
+    System,
 }
 
 pub struct Pane {
@@ -72,6 +74,7 @@ impl App {
             previous_view: None,
             sessions: Vec::new(),
             selected_session: 0,
+            setup_selection: 0,
             chat_messages: Vec::new(),
             chat_input: String::new(),
             chat_tx: None,

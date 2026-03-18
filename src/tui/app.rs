@@ -29,6 +29,14 @@ pub async fn run(
     let mut app = App::new();
     app.chat_tx = Some(chat_tx);
     app.output_manager = Some(output_manager);
+
+    // First-run detection: show setup if ~/.vigil/ doesn't exist yet.
+    let vigil_dir = dirs::home_dir()
+        .map(|h| h.join(".vigil"))
+        .unwrap_or_default();
+    if !vigil_dir.exists() {
+        app.view = View::Setup;
+    }
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(33));
 
@@ -125,7 +133,7 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         View::SessionList => handle_session_list_key(app, key),
         View::Chat => handle_chat_key(app, key),
         View::Terminal => handle_terminal_key(app, key),
-        View::Setup => {}
+        View::Setup => handle_setup_key(app, key),
     }
 }
 
@@ -174,6 +182,37 @@ fn open_pane(app: &mut App, session_id: String) {
     };
     app.panes.push(pane);
     app.active_pane = app.panes.len() - 1;
+}
+
+fn handle_setup_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    match key.code {
+        KeyCode::Up => {
+            if app.setup_selection > 0 {
+                app.setup_selection -= 1;
+            }
+        }
+        KeyCode::Down => {
+            if app.setup_selection < 2 {
+                app.setup_selection += 1;
+            }
+        }
+        KeyCode::Enter => {
+            match app.setup_selection {
+                0 => {
+                    // TODO: shell out to install ultrapowers
+                    app.navigate_to(View::SessionList);
+                }
+                1 => {
+                    // TODO: verify plugin directory
+                    app.navigate_to(View::SessionList);
+                }
+                _ => {
+                    app.navigate_to(View::SessionList);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn handle_session_list_key(app: &mut App, key: crossterm::event::KeyEvent) {
@@ -275,7 +314,7 @@ fn view(app: &App, frame: &mut Frame) {
         View::SessionList => views::session_list::render(app, frame, area),
         View::Chat => views::chat::render(app, frame, area),
         View::Terminal => views::terminal::render(app, frame, area),
-        View::Setup => {}
+        View::Setup => views::setup::render(app, frame, area),
     }
 
     if app.confirm_quit {

@@ -46,10 +46,12 @@ fn render_messages(app: &App, frame: &mut Frame, area: Rect) {
         let sender_style = match msg.sender {
             ChatSender::Vigil => theme::vigil_message(),
             ChatSender::User => theme::user_message(),
+            ChatSender::System => theme::status_blocked(),
         };
         let sender_name = match msg.sender {
             ChatSender::Vigil => "vigil",
             ChatSender::User => "you",
+            ChatSender::System => "system",
         };
 
         lines.push(Line::from(vec![
