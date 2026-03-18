@@ -28,7 +28,7 @@ pub(crate) async fn list_sessions(State(deps): State<AppDeps>) -> Result<impl In
 ///
 /// The response includes the session metadata plus `output` (the worker's
 /// stdout/stderr text) when available, so callers like Vigil's `session_recall`
-/// MCP tool can read worker results without a WebSocket connection.
+/// Skill can read worker results without a WebSocket connection.
 pub(crate) async fn get_session(
     State(deps): State<AppDeps>,
     Path(id): Path<String>,
@@ -315,7 +315,7 @@ pub(crate) struct SendInputBody {
 /// `POST /api/sessions/:id/input` — send text input to a session's PTY.
 ///
 /// Writes the message + carriage return to the session's terminal, as if
-/// the user typed it. Used by Vigil's `reply_to_worker` MCP tool to relay
+/// the user typed it. Used by Vigil's `reply_to_worker` Skill to relay
 /// user answers to workers that need input.
 pub(crate) async fn send_input(
     State(deps): State<AppDeps>,

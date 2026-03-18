@@ -5,19 +5,19 @@ import '@/styles/globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'Praefectus',
-    template: '%s — Praefectus',
+    default: 'Vigil',
+    template: '%s — Vigil',
   },
   description: 'AI Agent Orchestration Dashboard',
   openGraph: {
-    title: 'Praefectus',
+    title: 'Vigil',
     description: 'AI Agent Orchestration Dashboard',
-    siteName: 'Praefectus',
+    siteName: 'Vigil',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Praefectus',
+    title: 'Vigil',
     description: 'AI Agent Orchestration Dashboard',
   },
   manifest: '/manifest.webmanifest',

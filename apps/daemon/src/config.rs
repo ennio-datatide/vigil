@@ -1,6 +1,6 @@
 //! Daemon configuration resolution.
 //!
-//! Reads settings from `~/.praefectus/config.json` and resolves paths
+//! Reads settings from `~/.vigil/config.json` and resolves paths
 //! for the data directory, database, and logs.
 
 use std::path::PathBuf;
@@ -15,8 +15,8 @@ pub struct Config {
     pub server_port: u16,
     /// Port for the web dashboard.
     pub web_port: u16,
-    /// Root directory for all daemon data (`~/.praefectus`).
-    pub praefectus_home: PathBuf,
+    /// Root directory for all daemon data (`~/.vigil`).
+    pub vigil_home: PathBuf,
     /// Path to the `SQLite` database file.
     pub db_path: PathBuf,
     /// Directory for log files.
@@ -40,31 +40,42 @@ pub struct Config {
 impl Config {
     /// Resolve configuration for the given port.
     ///
-    /// Reads `~/.praefectus/config.json` if it exists, otherwise uses defaults.
+    /// Reads `~/.vigil/config.json` if it exists, otherwise uses defaults.
     ///
     /// # Errors
     ///
     /// Returns an error if the home directory cannot be determined.
     pub fn resolve(port: u16) -> Result<Self> {
-        let praefectus_home = dirs::home_dir()
-            .map(|h| h.join(".praefectus"))
+        let home = dirs::home_dir()
             .ok_or_else(|| ConfigError::Invalid("cannot determine home directory".into()))?;
 
-        let db_path = praefectus_home.join("praefectus.db");
-        let logs_dir = praefectus_home.join("logs");
-        let skills_dir = praefectus_home.join("skills");
-        let pid_file = praefectus_home.join("daemon.pid");
-        let worktree_base = praefectus_home.join("worktrees");
-        let lance_dir = praefectus_home.join("lance");
-        let kv_path = praefectus_home.join("kv.redb");
+        // Migrate ~/.praefectus -> ~/.vigil if needed.
+        let old_home = home.join(".praefectus");
+        let new_home = home.join(".vigil");
+        if old_home.exists() && !new_home.exists() {
+            tracing::info!("Migrating ~/.praefectus -> ~/.vigil");
+            if let Err(e) = std::fs::rename(&old_home, &new_home) {
+                tracing::warn!(error = %e, "Failed to migrate, creating fresh ~/.vigil");
+            }
+        }
 
-        let api_token = std::env::var("PRAEFECTUS_AUTH_TOKEN").ok();
-        let dashboard_url = std::env::var("PRAEFECTUS_DASHBOARD_URL").ok();
+        let vigil_home = new_home;
+
+        let db_path = vigil_home.join("vigil.db");
+        let logs_dir = vigil_home.join("logs");
+        let skills_dir = vigil_home.join("skills");
+        let pid_file = vigil_home.join("daemon.pid");
+        let worktree_base = vigil_home.join("worktrees");
+        let lance_dir = vigil_home.join("lance");
+        let kv_path = vigil_home.join("kv.redb");
+
+        let api_token = std::env::var("VIGIL_AUTH_TOKEN").ok();
+        let dashboard_url = std::env::var("VIGIL_DASHBOARD_URL").ok();
 
         Ok(Self {
             server_port: port,
             web_port: 3000,
-            praefectus_home,
+            vigil_home,
             db_path,
             logs_dir,
             skills_dir,
@@ -80,14 +91,14 @@ impl Config {
     /// Build a config rooted in `base` for use in tests.
     ///
     /// All paths are derived from `base` so each test gets an isolated
-    /// filesystem without touching the real `~/.praefectus`.
+    /// filesystem without touching the real `~/.vigil`.
     #[cfg(test)]
     #[must_use]
     pub fn for_testing(base: &std::path::Path) -> Self {
         Self {
             server_port: 0,
             web_port: 0,
-            praefectus_home: base.to_path_buf(),
+            vigil_home: base.to_path_buf(),
             db_path: base.join("test.db"),
             logs_dir: base.join("logs"),
             skills_dir: base.join("skills"),
@@ -106,7 +117,7 @@ impl Config {
     ///
     /// Returns an error if directory creation fails.
     pub fn ensure_dirs(&self) -> Result<()> {
-        for dir in [&self.praefectus_home, &self.logs_dir, &self.skills_dir, &self.worktree_base, &self.lance_dir] {
+        for dir in [&self.vigil_home, &self.logs_dir, &self.skills_dir, &self.worktree_base, &self.lance_dir] {
             std::fs::create_dir_all(dir).map_err(ConfigError::CreateDir)?;
         }
         Ok(())

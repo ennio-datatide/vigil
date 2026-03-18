@@ -9,7 +9,7 @@ use std::path::Path;
 /// daemon's `/events` endpoint. Placeholders `__SESSION_ID__` and
 /// `__SERVER_PORT__` are replaced at install time.
 const EMIT_EVENT_TEMPLATE: &str = r#"#!/bin/bash
-# emit-event.sh — reads hook JSON from stdin, forwards to praefectus server
+# emit-event.sh — reads hook JSON from stdin, forwards to vigil server
 INPUT=$(cat)
 SESSION_ID="__SESSION_ID__"
 TMPFILE=$(mktemp)

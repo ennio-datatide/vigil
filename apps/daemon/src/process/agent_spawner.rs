@@ -416,7 +416,7 @@ impl AgentSpawner {
         session_id: &str,
     ) -> anyhow::Result<Option<String>> {
         let worktree_path = self.config.worktree_base.join(session_id);
-        let branch_name = format!("praefectus/{session_id}");
+        let branch_name = format!("vigil/{session_id}");
 
         let output = std::process::Command::new("git")
             .args(["worktree", "add", "-b", &branch_name])
@@ -657,7 +657,7 @@ mod tests {
 
     #[test]
     fn capture_git_metadata_on_this_repo() {
-        // This test runs against the actual praefectus repo.
+        // This test runs against the actual vigil repo.
         let crate_dir = env!("CARGO_MANIFEST_DIR");
         let meta = AgentSpawner::capture_git_metadata(crate_dir);
 

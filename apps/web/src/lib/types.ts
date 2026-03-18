@@ -12,10 +12,10 @@ export type {
   SessionStatusType,
   UpdatePipelineInputType,
   WsMessage,
-} from '@praefectus/shared';
+} from '@vigil/shared';
 
 // Frontend-specific types
-import type { Session, WsMessage } from '@praefectus/shared';
+import type { Session, WsMessage } from '@vigil/shared';
 
 export interface SessionStore {
   sessions: Record<string, Session>;

@@ -8,9 +8,9 @@ use clap::{Parser, Subcommand};
 /// Default daemon URL for CLI client commands.
 const DEFAULT_URL: &str = "http://localhost:8000";
 
-/// Praefectus — AI coding session orchestrator.
+/// Vigil — AI coding session orchestrator.
 #[derive(Debug, Parser)]
-#[command(name = "praefectus", version, about)]
+#[command(name = "vigil", version, about)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -59,13 +59,6 @@ pub enum Command {
     Cleanup,
     /// Clear Vigil chat history.
     ClearHistory,
-    /// Run the Vigil MCP server (stdio transport). Internal — spawned by claude CLI.
-    #[command(hide = true)]
-    McpServe {
-        /// URL of the running daemon.
-        #[arg(long, default_value = "http://localhost:8000")]
-        daemon_url: String,
-    },
 }
 
 /// Execute the `up` subcommand — verify Claude Code auth, then start the daemon.
@@ -101,7 +94,7 @@ pub async fn cmd_up(port: u16) -> anyhow::Result<()> {
             if sub_type != "max" && sub_type != "max_5x" {
                 eprintln!("Claude Code subscription: {sub_type}");
                 eprintln!("Vigil requires a Claude Max subscription for unlimited usage.");
-                eprintln!("You can still use Praefectus, but Vigil chat will incur per-token costs.");
+                eprintln!("You can still use Vigil, but Vigil chat will incur per-token costs.");
                 eprintln!();
             }
 
@@ -119,7 +112,7 @@ pub async fn cmd_up(port: u16) -> anyhow::Result<()> {
         }
     }
 
-    println!("Starting Praefectus daemon on port {port}...");
+    println!("Starting Vigil daemon on port {port}...");
 
     // Resolve the web app directory relative to the daemon binary or workspace root.
     let web_dir = find_web_dir();
@@ -205,24 +198,24 @@ fn find_web_dir() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Praefectus home directory (`~/.praefectus`).
-fn pf_home() -> std::path::PathBuf {
+/// Vigil home directory (`~/.vigil`).
+fn vigil_home() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".praefectus")
+        .join(".vigil")
 }
 
 /// PID file path for a backgrounded daemon.
 fn pid_file_path() -> std::path::PathBuf {
-    pf_home().join("daemon.pid")
+    vigil_home().join("daemon.pid")
 }
 
 /// Log file path for a backgrounded daemon.
 fn daemon_log_path() -> std::path::PathBuf {
-    pf_home().join("logs").join("daemon.log")
+    vigil_home().join("logs").join("daemon.log")
 }
 
-/// Execute `pf up -b` — re-spawn the current binary as a detached background
+/// Execute `vigil up -b` — re-spawn the current binary as a detached background
 /// process, then exit immediately so the user gets their terminal back.
 ///
 /// # Errors
@@ -252,8 +245,8 @@ pub fn cmd_up_background(port: u16) -> anyhow::Result<()> {
         // Check if process is alive.
         let alive = unsafe { libc::kill(pid, 0) } == 0;
         if alive {
-            println!("Praefectus is already running (PID {pid}).");
-            println!("Use `pf down` to stop it first.");
+            println!("Vigil is already running (PID {pid}).");
+            println!("Use `vigil down` to stop it first.");
             return Ok(());
         }
         // Stale PID file — remove it.
@@ -274,12 +267,12 @@ pub fn cmd_up_background(port: u16) -> anyhow::Result<()> {
     let pid = child.id();
     std::fs::write(&pid_path, pid.to_string())?;
 
-    println!("Praefectus started in background (PID {pid})");
+    println!("Vigil started in background (PID {pid})");
     println!("  Daemon:   http://localhost:{port}");
     println!("  Frontend: http://localhost:3000");
     println!("  Logs:     {}", log_path.display());
     println!();
-    println!("Use `pf down` to stop.");
+    println!("Use `vigil down` to stop.");
 
     Ok(())
 }
@@ -305,7 +298,7 @@ pub async fn cmd_down() -> anyhow::Result<()> {
             eprintln!("A daemon seems to be running but has no PID file.");
             eprintln!("Kill it manually or find the process with: lsof -i :8000");
         } else {
-            println!("Praefectus is not running.");
+            println!("Vigil is not running.");
         }
         return Ok(());
     }
@@ -319,14 +312,14 @@ pub async fn cmd_down() -> anyhow::Result<()> {
     // Check if alive.
     let alive = unsafe { libc::kill(pid, 0) } == 0;
     if !alive {
-        println!("Praefectus (PID {pid}) is not running. Cleaning up PID file.");
+        println!("Vigil (PID {pid}) is not running. Cleaning up PID file.");
         std::fs::remove_file(&pid_path).ok();
         return Ok(());
     }
 
     // Send SIGTERM to the process group (negative PID kills the whole group).
     // Fall back to the single process if PGID kill fails.
-    println!("Stopping Praefectus (PID {pid})...");
+    println!("Stopping Vigil (PID {pid})...");
     let killed = unsafe { libc::kill(-pid, libc::SIGTERM) };
     if killed != 0 {
         unsafe {
@@ -344,7 +337,7 @@ pub async fn cmd_down() -> anyhow::Result<()> {
     }
 
     std::fs::remove_file(&pid_path).ok();
-    println!("Praefectus stopped.");
+    println!("Vigil stopped.");
 
     Ok(())
 }
@@ -397,7 +390,7 @@ pub async fn cmd_start(project: &str, prompt: &str, skill: Option<&str>) -> anyh
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+            eprintln!("Could not reach Vigil server. Is it running? Try: vigil up");
             std::process::exit(1);
         }
     }
@@ -483,7 +476,7 @@ pub async fn cmd_ls(all: bool) -> anyhow::Result<()> {
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+            eprintln!("Could not reach Vigil server. Is it running? Try: vigil up");
             std::process::exit(1);
         }
     }
@@ -562,7 +555,7 @@ pub async fn cmd_cleanup() -> anyhow::Result<()> {
             println!("Cleanup: daemon returned an error.");
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+            eprintln!("Could not reach Vigil server. Is it running? Try: vigil up");
         }
     }
 
@@ -592,7 +585,7 @@ pub async fn cmd_clear_history() -> anyhow::Result<()> {
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("Could not reach Praefectus server. Is it running? Try: pf up");
+            eprintln!("Could not reach Vigil server. Is it running? Try: vigil up");
             std::process::exit(1);
         }
     }

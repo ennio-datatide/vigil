@@ -40,7 +40,7 @@ pub(crate) async fn test_notification(
         .create(
             "system",
             NotificationType::SessionDone,
-            "Test notification from Praefectus",
+            "Test notification from Vigil",
         )
         .await?;
 

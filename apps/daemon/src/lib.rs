@@ -1,10 +1,9 @@
-//! Praefectus daemon library crate.
+//! Vigil daemon library crate.
 //!
 //! Provides the core server logic: configuration, database, event bus,
 //! HTTP API, and service layer.
 
 pub mod cli;
-pub mod mcp;
 pub(crate) mod api;
 pub(crate) mod config;
 pub(crate) mod db;
@@ -39,7 +38,7 @@ use crate::deps::AppDeps;
 pub async fn run(port: u16) -> Result<()> {
     init_tracing();
 
-    tracing::info!(port, "starting praefectus daemon");
+    tracing::info!(port, "starting vigil daemon");
 
     let config = Config::resolve(port)?;
     let deps = AppDeps::new(config).await?;
@@ -113,14 +112,14 @@ pub async fn run(port: u16) -> Result<()> {
     telegram_poller_handle.abort();
     vigil_manager_handle.abort();
 
-    tracing::info!("praefectus daemon stopped");
+    tracing::info!("vigil daemon stopped");
     Ok(())
 }
 
 /// Initialise the tracing subscriber with env-filter support.
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("praefectus_daemon=info,tower_http=info"));
+        .unwrap_or_else(|_| EnvFilter::new("vigil_daemon=info,tower_http=info"));
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
