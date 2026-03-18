@@ -79,7 +79,7 @@ url = "2"
 insta = { version = "1", features = ["json", "redactions"] }
 test-case = "3"
 tempfile = "3"
-axum-test = "16"
+axum-test = "19"
 tower = "0.5.3"
 http-body-util = "0.1.3"
 
