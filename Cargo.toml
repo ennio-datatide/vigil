@@ -67,7 +67,7 @@ subtle = "2"
 libc = "0.2"
 
 # PTY allocation
-portable-pty = "0.8"
+portable-pty = "0.9"
 
 # Utilities
 arc-swap = "1"
