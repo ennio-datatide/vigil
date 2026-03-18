@@ -20,8 +20,11 @@ pub async fn run(
     mut terminal: DefaultTerminal,
     cancel: CancellationToken,
     mut session_rx: tokio::sync::watch::Receiver<Vec<Session>>,
+    chat_tx: tokio::sync::mpsc::Sender<String>,
+    mut chat_resp_rx: tokio::sync::watch::Receiver<Option<String>>,
 ) -> Result<()> {
     let mut app = App::new();
+    app.chat_tx = Some(chat_tx);
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(33));
 
@@ -38,6 +41,11 @@ pub async fn run(
             Ok(()) = session_rx.changed() => {
                 let sessions = session_rx.borrow_and_update().clone();
                 update(&mut app, Message::SessionsUpdated(sessions));
+            }
+            Ok(()) = chat_resp_rx.changed() => {
+                if let Some(response) = chat_resp_rx.borrow_and_update().clone() {
+                    update(&mut app, Message::ChatResponse(response));
+                }
             }
             _ = cancel.cancelled() => {
                 app.should_quit = true;
@@ -57,6 +65,13 @@ fn update(app: &mut App, msg: Message) {
     match msg {
         Message::Key(key) => handle_key(app, key),
         Message::SessionsUpdated(sessions) => app.sessions = sessions,
+        Message::ChatResponse(response) => {
+            app.chat_messages.push(crate::tui::state::ChatMessage {
+                sender: crate::tui::state::ChatSender::Vigil,
+                content: response,
+                timestamp: chrono::Utc::now(),
+            });
+        }
         Message::Tick | Message::Quit => {
             if matches!(msg, Message::Quit) {
                 app.should_quit = true;
@@ -137,9 +152,12 @@ fn handle_chat_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 app.chat_input.clear();
                 app.chat_messages.push(crate::tui::state::ChatMessage {
                     sender: crate::tui::state::ChatSender::User,
-                    content,
+                    content: content.clone(),
                     timestamp: chrono::Utc::now(),
                 });
+                if let Some(tx) = &app.chat_tx {
+                    let _ = tx.try_send(content);
+                }
             }
         }
         KeyCode::Char(c) => app.chat_input.push(c),

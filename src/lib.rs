@@ -131,9 +131,34 @@ pub async fn run_tui(port: u16) -> color_eyre::Result<()> {
         }
     });
 
+    // Chat channel: TUI sends user messages, background task forwards to VigilManager.
+    let (chat_tx, mut chat_rx) = tokio::sync::mpsc::channel::<String>(16);
+    // Response channel: background task sends Vigil responses back to TUI.
+    let (chat_resp_tx, chat_resp_rx) = tokio::sync::watch::channel::<Option<String>>(None);
+
+    let chat_vigil = Arc::clone(&deps.vigil_manager);
+    let chat_cancel = cancel.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                Some(message) = chat_rx.recv() => {
+                    match chat_vigil.send_message(&message).await {
+                        Ok(response) => {
+                            let _ = chat_resp_tx.send(Some(response));
+                        }
+                        Err(e) => {
+                            let _ = chat_resp_tx.send(Some(format!("Error: {e}")));
+                        }
+                    }
+                }
+                _ = chat_cancel.cancelled() => break,
+            }
+        }
+    });
+
     // Run the TUI as the main task.
     let terminal = ratatui::init();
-    let result = tui::app::run(terminal, cancel, session_rx).await;
+    let result = tui::app::run(terminal, cancel, session_rx, chat_tx, chat_resp_rx).await;
     ratatui::restore();
 
     // Clean up background tasks.
