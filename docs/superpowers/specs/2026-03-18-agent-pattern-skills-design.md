@@ -64,6 +64,8 @@ description: <when to use this pattern — specific enough for Claude Code to ma
 [The one sentence takeaway from the source repo]
 ```
 
+**Language:** All code examples use **Python** as the primary language (most universal for AI/ML work, all source repos use Python). Each Skill includes a note that the pattern applies to any language.
+
 **Source mapping** — each Skill draws from specific repos:
 
 | Skill | Primary Source |
@@ -100,8 +102,11 @@ skills/vigil/parallel-workers/
 2. POSTs to `/api/sessions` for each task concurrently (background curl jobs)
 3. Collects all session IDs
 4. Polls all sessions every 3 seconds until all reach terminal state
-5. Returns aggregated JSON: `{"results": [{"session_id":"...","status":"...","output":"..."}, ...]}`
-6. If any worker hits `needs_input`, returns that in the aggregate with the specific session_id
+5. For each completed session, GETs `/api/sessions/:id` which includes the `output` field (populated by the get_session handler from OutputManager)
+6. Returns aggregated JSON: `{"results": [{"session_id":"...","status":"...","output":"..."}, ...]}`
+7. If any worker hits `needs_input`, returns immediately with that worker's info so Vigil can ask the user. Other workers continue running in the background — Vigil can check them later via session-recall.
+
+NOTE: The `GET /api/sessions/:id` endpoint already includes an `output` field populated from `OutputManager::get_buffer()` or `read_log()` (see `api/sessions.rs` get_session handler). This is the same field used by the existing spawn-worker script.
 
 #### evaluate-and-improve Skill
 
@@ -118,10 +123,13 @@ skills/vigil/evaluate-and-improve/
 
 **evaluate.sh behavior:**
 1. Accepts `--project-path`, `--session-id` (completed worker), `--criteria` (what to evaluate)
-2. GETs the worker's output from `/api/sessions/:id`
-3. Spawns an evaluator worker with prompt: "Evaluate this output against these criteria: [criteria]. Output JSON: {quality: 1-10, issues: [...], suggestions: [...]}"
-4. If quality < 7: spawns a refinement worker with the original output + evaluator feedback
-5. Returns final output JSON with quality score
+2. GETs the worker's output from `/api/sessions/:id` (the `output` field from OutputManager)
+3. Spawns an evaluator worker via `POST /api/sessions` with prompt: "Evaluate this output against these criteria: [criteria]. Output JSON: {quality: 1-10, issues: [...], suggestions: [...]}"
+4. Polls evaluator until complete, parses the quality JSON from output
+5. If quality < 7: spawns a refinement worker with the original output + evaluator feedback
+6. Returns final output JSON with quality score
+
+NOTE: Both parallel.sh and evaluate.sh use the same `GET /api/sessions/:id` response format with the `output` field, consistent with spawn.sh.
 
 ### 3. Directory Reorganization
 
@@ -163,8 +171,11 @@ apps/daemon/skills/
 
 **agent_spawner.rs `spawn_interactive()`:**
 - Add new step: copy `skills/patterns/` into the worktree's `.claude/skills/`
-- Same `copy_dir_recursive` helper used by vigil_manager
+- The `copy_dir_recursive` helper currently lives as a private function in `vigil_manager.rs`. Move it to a shared utility (e.g., `src/utils.rs` or make it `pub(crate)`) so both `vigil_manager.rs` and `agent_spawner.rs` can use it.
 - Git add + commit the skills so Claude Code discovers them
+
+**vigil_manager.rs `spawn_vigil()`:**
+- Update the source path from `skills/` to `skills/vigil/` in the `copy_dir_recursive` call. The source path uses `env!("CARGO_MANIFEST_DIR")` at compile time — verify this resolves correctly after the directory move.
 
 ### 5. vigil-core Updates
 
