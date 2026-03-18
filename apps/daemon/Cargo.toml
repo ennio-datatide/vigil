@@ -1,17 +1,13 @@
 [package]
-name = "praefectus-daemon"
+name = "vigil-daemon"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.91"
-description = "Praefectus daemon — AI session orchestrator"
+description = "Vigil daemon — AI session orchestrator"
 license = "MIT"
 
 [[bin]]
-name = "praefectus"
-path = "src/main.rs"
-
-[[bin]]
-name = "pf"
+name = "vigil"
 path = "src/main.rs"
 
 [dependencies]
@@ -36,9 +32,6 @@ fastembed = "4"
 redb = "2.4"
 arrow-array = "57"
 arrow-schema = "57"
-
-# MCP
-rmcp = { version = "0.16", features = ["server", "transport-io"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -70,7 +63,6 @@ portable-pty = "0.8"
 
 # Utilities
 arc-swap = "1"
-schemars = "1.2"
 fs-err = "3"
 dirs = "6.0"
 url = "2"

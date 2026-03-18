@@ -45,7 +45,7 @@ impl VigilManager {
         config: Arc<Config>,
         db: Arc<SqliteDb>,
     ) -> Self {
-        let vigil_dir = config.praefectus_home.join("vigil");
+        let vigil_dir = config.vigil_home.join("vigil");
         Self {
             pty_manager,
             output_manager,
