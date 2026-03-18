@@ -285,6 +285,25 @@ impl AgentSpawner {
             self.config.server_port,
         )?;
 
+        // Install pattern Skills for the worker.
+        let patterns_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("skills")
+            .join("patterns");
+        if patterns_src.exists() {
+            let skills_dst = Path::new(&work_dir)
+                .join(".claude")
+                .join("skills");
+            std::fs::create_dir_all(&skills_dst)
+                .map_err(|e| anyhow::anyhow!("failed to create skills dir: {e}"))?;
+            crate::services::vigil_manager::copy_dir_recursive(&patterns_src, &skills_dst)?;
+            tracing::info!(
+                session_id,
+                src = %patterns_src.display(),
+                dst = %skills_dst.display(),
+                "installed pattern Skills for worker",
+            );
+        }
+
         // Capture git metadata.
         let git_metadata = Self::capture_git_metadata(&work_dir);
 

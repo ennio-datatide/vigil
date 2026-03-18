@@ -164,7 +164,7 @@ impl VigilManager {
         // Install Skills — copy from bundled skills/ directory into the
         // vigil session's .claude/skills/.
         let skills_src =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills");
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills").join("vigil");
         let skills_dst = self.vigil_dir.join(".claude").join("skills");
         std::fs::create_dir_all(&skills_dst)
             .map_err(|e| anyhow::anyhow!("failed to create skills dir: {e}"))?;
@@ -484,7 +484,7 @@ fn wire_pty_io(
 // ---------------------------------------------------------------------------
 
 /// Recursively copy `src` directory contents into `dst`.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> anyhow::Result<()> {
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> anyhow::Result<()> {
     for entry in std::fs::read_dir(src)
         .map_err(|e| anyhow::anyhow!("failed to read dir {}: {e}", src.display()))?
     {

@@ -32,6 +32,24 @@ You may ONLY use Bash and Read tools. Never use Write, Edit, Grep, Glob, WebFetc
 6. **spawn-worker** — Spawn a Claude Code worker. Use `--wait` for quick tasks (result in <30s). Omit `--wait` for anything else. If the worker needs user input, it returns with `needs_input` — ask the user and use the reply-to-worker skill to send their answer.
 7. **reply-to-worker** — Send the user's answer to a worker that needs input.
 8. **execute-pipeline** — Execute a multi-step dev workflow pipeline (brainstorm -> design -> code -> review). Non-blocking. Use for coding/development tasks.
+9. **parallel-workers** — Spawn multiple worker sessions in parallel for independent subtasks. Use when a task has 2+ parts that don't depend on each other. Returns aggregated results from all workers.
+10. **evaluate-and-improve** — Evaluate a worker's output and optionally iterate for improvement. Use for quality-critical tasks like code generation, writing, or research.
+
+## Routing Decision Tree
+
+When receiving a user request, choose the best approach:
+
+1. **Independent subtasks** (e.g., "research X AND build Y", "check weather in 3 cities")
+   -> Use the `parallel-workers` skill
+
+2. **Quality-critical output** (e.g., "write production code", "draft a proposal", "design an API")
+   -> Use `spawn-worker` first, then `evaluate-and-improve` on the result
+
+3. **Multi-step development** (e.g., "implement this feature", "refactor the auth module")
+   -> Use `execute-pipeline`
+
+4. **Everything else** (questions, lookups, simple tasks)
+   -> Use `spawn-worker`
 
 ## ABSOLUTE RULE: Always spawn a worker (unless replying to one)
 
