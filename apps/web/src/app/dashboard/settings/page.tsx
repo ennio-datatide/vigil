@@ -73,7 +73,7 @@ export default function SettingsPage() {
       <section className="flex items-center justify-between rounded-xl border border-border-subtle bg-[rgba(255,255,255,0.025)] p-5">
         <div>
           <h3 className="text-sm font-semibold text-text">Server Status</h3>
-          <p className="mt-1 text-xs text-text-faint">Praefectus daemon on port 4000</p>
+          <p className="mt-1 text-xs text-text-faint">Vigil daemon on port 4000</p>
         </div>
         <div className="flex items-center gap-2">
           <span
@@ -219,10 +219,10 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-2">
           <div className="rounded-lg border border-[rgba(255,255,255,0.04)] bg-[rgba(0,0,0,0.3)] px-3.5 py-2.5 font-mono text-xs text-text-muted">
-            $ praefectus auth claude
+            $ vigil auth claude
           </div>
           <div className="rounded-lg border border-[rgba(255,255,255,0.04)] bg-[rgba(0,0,0,0.3)] px-3.5 py-2.5 font-mono text-xs text-text-muted">
-            $ praefectus auth codex
+            $ vigil auth codex
           </div>
         </div>
       </section>

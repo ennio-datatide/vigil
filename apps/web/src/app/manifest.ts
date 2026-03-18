@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Praefectus',
-    short_name: 'Praefectus',
+    name: 'Vigil',
+    short_name: 'Vigil',
     description: 'AI Agent Orchestration Dashboard',
     start_url: '/dashboard',
     display: 'standalone',

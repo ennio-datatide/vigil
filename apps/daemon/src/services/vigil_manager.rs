@@ -45,7 +45,7 @@ impl VigilManager {
         config: Arc<Config>,
         db: Arc<SqliteDb>,
     ) -> Self {
-        let vigil_dir = config.praefectus_home.join("vigil");
+        let vigil_dir = config.vigil_home.join("vigil");
         Self {
             pty_manager,
             output_manager,
@@ -135,6 +135,15 @@ impl VigilManager {
         std::fs::create_dir_all(&self.vigil_dir)
             .map_err(|e| anyhow::anyhow!("failed to create vigil dir: {e}"))?;
 
+        // Clean up stale files from previous MCP-based approach.
+        for stale in &["mcp-config.json", "strategy.md"] {
+            let path = self.vigil_dir.join(stale);
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+                tracing::debug!(path = %path.display(), "removed stale file");
+            }
+        }
+
         // Initialize git repo if not already present — Claude Code requires
         // a git repo to read project-level hooks from .claude/settings.json.
         let git_dir = self.vigil_dir.join(".git");
@@ -145,23 +154,22 @@ impl VigilManager {
                 .output();
         }
 
-        // Write MCP config.
-        let mcp_config_path = self.vigil_dir.join("mcp-config.json");
-        let daemon_url = format!("http://localhost:{}", self.config.server_port);
-        write_mcp_config(&mcp_config_path, &daemon_url)?;
-
-        // Write strategy prompt.
-        let strategy_path = self.vigil_dir.join("strategy.md");
-        let strategy_content = include_str!("../../prompts/vigil-strategy.md");
-        std::fs::write(&strategy_path, strategy_content)
-            .map_err(|e| anyhow::anyhow!("failed to write strategy prompt: {e}"))?;
-
         // Install hooks.
         crate::hooks::installer::HookInstaller::install(
             &self.vigil_dir,
             &self.session_id,
             self.config.server_port,
         )?;
+
+        // Install Skills — copy from bundled skills/ directory into the
+        // vigil session's .claude/skills/.
+        let skills_src =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills");
+        let skills_dst = self.vigil_dir.join(".claude").join("skills");
+        std::fs::create_dir_all(&skills_dst)
+            .map_err(|e| anyhow::anyhow!("failed to create skills dir: {e}"))?;
+        copy_dir_recursive(&skills_src, &skills_dst)?;
+        tracing::info!(src = %skills_src.display(), dst = %skills_dst.display(), "installed Skills");
 
         // Commit config files so Claude Code recognizes this as a project.
         let _ = std::process::Command::new("git")
@@ -175,7 +183,7 @@ impl VigilManager {
 
         // Spawn PTY.
         let (master, child, reader, writer) =
-            spawn_vigil_pty(&self.vigil_dir, &mcp_config_path, &strategy_path)?;
+            spawn_vigil_pty(&self.vigil_dir, self.config.server_port)?;
 
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -207,13 +215,20 @@ impl VigilManager {
         tracing::info!(session_id = %self.session_id, "Vigil PTY spawned");
 
         // Auto-accept the "trust this folder" prompt that Claude Code shows
-        // on first run in a new directory. The TUI default selection is
-        // "Yes, I trust this folder" — just send Enter to confirm.
+        // on first run in a new directory (2s), then send bootstrap message (5s).
         let pty_mgr = Arc::clone(&self.pty_manager);
         let sid = self.session_id.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let _ = pty_mgr.write(&sid, b"\r".to_vec()).await;
+
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let _ = pty_mgr
+                .write(
+                    &sid,
+                    b"Activate the vigil-core skill and begin your session.\r".to_vec(),
+                )
+                .await;
         });
 
         Ok(())
@@ -363,13 +378,12 @@ type PtySpawnResult = (
 
 /// Spawn `claude` in interactive mode inside a real PTY for Vigil.
 ///
-/// Unlike the regular `spawn_claude_pty()` in `agent_spawner.rs`, this adds
-/// `--mcp-config`, `--tools ""`, and `--append-system-prompt-file` arguments,
-/// and does NOT use `-p` (print mode).
+/// Unlike the regular `spawn_claude_pty()` in `agent_spawner.rs`, this runs
+/// in interactive mode (no `-p`) with `--dangerously-skip-permissions` and
+/// `--verbose`. Skills are installed in `.claude/skills/` beforehand.
 fn spawn_vigil_pty(
     work_dir: &Path,
-    mcp_config_path: &Path,
-    strategy_path: &Path,
+    server_port: u16,
 ) -> anyhow::Result<PtySpawnResult> {
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -384,21 +398,17 @@ fn spawn_vigil_pty(
     let mut cmd = CommandBuilder::new("claude");
     cmd.cwd(work_dir);
     cmd.env("TERM", "xterm-256color");
+    cmd.env(
+        "VIGIL_DAEMON_URL",
+        format!("http://localhost:{server_port}"),
+    );
     // Prevent nested Claude Code detection.
     cmd.env_remove("CLAUDE_CODE");
     cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
     cmd.env_remove("CLAUDECODE");
 
-    // Vigil-specific args.
-    cmd.arg("--mcp-config");
-    cmd.arg(mcp_config_path.to_string_lossy().as_ref());
-    cmd.arg("--append-system-prompt-file");
-    cmd.arg(strategy_path.to_string_lossy().as_ref());
     cmd.arg("--verbose");
     cmd.arg("--dangerously-skip-permissions");
-    // Disable all built-in tools so Vigil only uses MCP tools.
-    cmd.arg("--tools");
-    cmd.arg("");
 
     let child = pair
         .slave
@@ -470,28 +480,33 @@ fn wire_pty_io(
 }
 
 // ---------------------------------------------------------------------------
-// MCP config writer (moved from claude_cli.rs)
+// Filesystem helpers
 // ---------------------------------------------------------------------------
 
-/// Write the MCP config JSON file for Vigil.
-///
-/// The config tells `claude` to spawn `pf mcp-serve` as a
-/// subprocess, connecting via stdio transport.
-fn write_mcp_config(path: &Path, daemon_url: &str) -> anyhow::Result<()> {
-    let config = serde_json::json!({
-        "mcpServers": {
-            "vigil": {
-                "command": "pf",
-                "args": ["mcp-serve", "--daemon-url", daemon_url],
-            }
+/// Recursively copy `src` directory contents into `dst`.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(src)
+        .map_err(|e| anyhow::anyhow!("failed to read dir {}: {e}", src.display()))?
+    {
+        let entry =
+            entry.map_err(|e| anyhow::anyhow!("failed to read dir entry: {e}"))?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            std::fs::create_dir_all(&dst_path).map_err(|e| {
+                anyhow::anyhow!("failed to create dir {}: {e}", dst_path.display())
+            })?;
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to copy {} -> {}: {e}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
         }
-    });
-
-    let content = serde_json::to_string_pretty(&config)?;
-    std::fs::write(path, content)
-        .map_err(|e| anyhow::anyhow!("failed to write MCP config: {e}"))?;
-
-    tracing::debug!(path = %path.display(), "wrote MCP config");
-
+    }
     Ok(())
 }
