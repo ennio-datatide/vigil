@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(mask_token("123456789"), "1234...6789");
         assert_eq!(
             mask_token("bot000000000:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
-            "bot1...Dsaw"
+            "bot0...XXXX"
         );
     }
 
@@ -205,7 +205,7 @@ mod tests {
             assert_eq!(resp.status(), StatusCode::OK);
             let body = json_body(resp).await;
             assert_eq!(body["configured"], true);
-            assert_eq!(body["botToken"], "bot1...Dsaw");
+            assert_eq!(body["botToken"], "bot0...XXXX");
             assert_eq!(body["chatId"], "12345");
             assert_eq!(body["enabled"], true);
         }
@@ -231,7 +231,7 @@ mod tests {
 
             // Update with masked token — should preserve original.
             let update = serde_json::json!({
-                "botToken": "bot1...Dsaw",
+                "botToken": "bot0...XXXX",
                 "chatId": "99999",
                 "dashboardUrl": "http://localhost:4000",
                 "enabled": false,
@@ -250,7 +250,7 @@ mod tests {
                 .await
                 .unwrap();
             let body = json_body(resp).await;
-            assert_eq!(body["botToken"], "bot1...Dsaw");
+            assert_eq!(body["botToken"], "bot0...XXXX");
             assert_eq!(body["chatId"], "99999");
             assert_eq!(body["enabled"], false);
         }
