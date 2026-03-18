@@ -1,0 +1,99 @@
+[package]
+name = "vigil"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "Vigil daemon — AI session orchestrator"
+license = "MIT"
+
+[[bin]]
+name = "vigil"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.44", features = ["full"] }
+futures = "0.3"
+
+# HTTP / WebSocket
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+
+# HTTP client
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
+
+# Vector / embedding
+lancedb = "0.26"
+lance-index = "2.0"
+fastembed = "4"
+redb = "2.4"
+arrow-array = "57"
+arrow-schema = "57"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# TUI
+ratatui = "0.30"
+tui-term = "0.3"
+color-eyre = "0.6"
+tokio-util = { version = "0.7", features = ["rt"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+
+# Common types
+uuid = { version = "1.15", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Crypto
+subtle = "2"
+
+# Unix process management
+libc = "0.2"
+
+# PTY allocation
+portable-pty = "0.8"
+
+# Utilities
+arc-swap = "1"
+fs-err = "3"
+dirs = "6.0"
+url = "2"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json", "redactions"] }
+test-case = "3"
+tempfile = "3"
+axum-test = "16"
+tower = "0.5.3"
+http-body-util = "0.1.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -2 }
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"

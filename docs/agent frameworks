@@ -1,0 +1,93 @@
+# Raw agentic AI repos that teach you the real patterns
+
+**You don't need a framework to build agents.** The most educational GitHub repositories for agentic AI strip away LangChain, MCP, and AutoGen to reveal a surprisingly simple core: an LLM in a loop, calling functions, passing results back. The 14 repos below — spanning Python, Rust, Go, JavaScript, and Bash — demonstrate every major agentic pattern using only native code and direct API calls. Anthropic's own cookbook is the single best starting point, with reference implementations of six foundational patterns in pure SDK calls.
+
+---
+
+## Anthropic's cookbook is the canonical starting point
+
+**[anthropics/anthropic-cookbook](https://github.com/anthropics/anthropic-cookbook)** — Python, Anthropic Claude — ⭐ ~32k
+
+This is the definitive resource. The `patterns/agents/` directory contains reference implementations from Anthropic's landmark "Building Effective Agents" blog post by Erik Schluntz and Barry Zhang. It covers **six distinct patterns**: prompt chaining (sequential LLM calls where each uses prior output), routing (classifying input to specialized handlers), orchestrator-workers (a central LLM dynamically delegating to worker LLMs), parallelization (simultaneous LLM calls), evaluator-optimizer (iterative refinement loops), and simple autonomous agents (LLMs using tools in a feedback loop). Every example uses only the `anthropic` Python SDK — a `util.py` with helpers for authentication and a raw `client.messages.create()` call driving each pattern. Self-contained notebooks with detailed comments explain the *why* behind every design choice. **If you read one repo on this list, make it this one.**
+
+**[anthropics/claude-quickstarts](https://github.com/anthropics/claude-quickstarts)** (computer-use-demo/) — Python, Anthropic Claude — ⭐ ~14k
+
+The `computer-use-demo/computer_use_demo/loop.py` file is the **purest agent loop in existence**: roughly 200 lines that call the Claude API, check for `tool_use` stop reasons, execute tools locally (bash, mouse/keyboard, text editor), append results to context, and repeat. No orchestration framework — just a `while` loop and the Anthropic SDK. This is the official reference implementation for Claude's computer use capability, and it demonstrates how autonomous task-solving agents actually work at the API level.
+
+---
+
+## OpenAI's Swarm distills multi-agent orchestration to its essence
+
+**[openai/swarm](https://github.com/openai/swarm)** — Python, OpenAI — ⭐ ~21k
+
+OpenAI's educational framework reduces multi-agent systems to **two primitives**: an `Agent` (instructions + functions) and **handoffs** (returning another Agent from a function call). The entire core orchestration loop in `swarm/core.py` is roughly **100 lines**: get completion → execute tool calls → switch agent if a handoff occurred → update context → repeat. It ships with five worked examples — airline customer service (flight changes, cancellations, baggage across multiple specialized agents), a triage router, a personal shopper, and a support bot with UI and help-center agents. Swarm proves that multi-agent coordination is fundamentally just function calling plus conversation routing. Now superseded by the OpenAI Agents SDK for production, it remains the clearest educational implementation of the handoff pattern.
+
+**[openai/openai-cookbook](https://github.com/openai/openai-cookbook)** (Orchestrating_agents.ipynb) — Python, OpenAI — ⭐ ~72k
+
+The `Orchestrating_agents.ipynb` notebook is the theoretical blueprint that became Swarm. It builds the entire agent loop from scratch in approximately **50 lines of Python**: define "routines" (system prompt + tools), implement `run_full_turn()`, and wire up agent handoffs via `transfer_to_XXX` functions. The function calling notebooks (`How_to_call_functions_with_chat_models.ipynb`) show the fundamental building block — defining JSON schemas, parsing `tool_calls`, executing functions, returning results — with zero abstractions beyond `client.chat.completions.create()`.
+
+---
+
+## Three repos under 100 lines that rival full frameworks
+
+**[SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)** — Python, any LLM via LiteLLM — ⭐ ~3.2k
+
+Built by the Princeton and Stanford team behind SWE-bench, this is approximately **100 lines of Python** for the core agent class. It uses **only bash as its tool** — no function-calling API needed. Actions execute via `subprocess.run()`, and every action is completely independent. Despite this radical simplicity, it achieves over **74% on SWE-bench Verified**, rivaling systems with thousands of lines of code. The insight: agents are fundamentally "LLM + loop + shell." Used in production by Meta, NVIDIA, and IBM.
+
+**[The-Pocket/PocketFlow](https://github.com/The-Pocket/PocketFlow)** — Python (also TS, Java, Go, Rust, C++) — ⭐ ~10k+
+
+The entire framework is exactly **100 lines of code** with zero dependencies. The core abstraction is a directed graph: `Node` objects with `prep()`/`exec()`/`post()` lifecycle methods connected by labeled edges, communicating via a shared store. From this single primitive, the documentation shows how to implement agents, RAG, map-reduce, task decomposition, and multi-agent workflows. Created by a Microsoft Research AI Frontiers researcher, PocketFlow proves that **all LLM framework patterns reduce to a graph plus shared state**. Ports in seven languages demonstrate the abstraction is universal.
+
+**[Antropath/minimal-agent](https://github.com/Antropath/minimal-agent)** — Python, any LLM via LiteLLM — ⭐ ~89
+
+The core `agents.py` is roughly **100 lines** (excluding comments) implementing the ReAct pattern: the agent reasons, writes Python code as actions, executes it, observes results, and repeats. Extensively commented for education, with an architecture diagram included. Inspired by HuggingFace's smolagents but built entirely from scratch. This is the best-documented educational implementation of the **Reason + Act loop** available.
+
+---
+
+## Tool use without the abstraction layers
+
+**[AbanteAI/rawdog](https://github.com/AbanteAI/rawdog)** — Python, any LLM via LiteLLM — ⭐ ~1.8k
+
+Rawdog takes a fundamentally different approach to tool use: instead of function calling, the LLM generates complete Python scripts that are **auto-executed via `exec()`**. The output is appended to conversation context, enabling the model to self-select context by printing values, reading its own output, and iterating. The name stands for "Recursive Augmentation With Deterministic Output Generations." A `--leash` mode requires manual approval before execution. This repo demonstrates that tool use doesn't require a formal function-calling API — **code generation itself is the universal tool**.
+
+**[sigoden/aichat](https://github.com/sigoden/aichat)** — Rust, 20+ providers — ⭐ ~9.3k
+
+A single Rust binary providing shell assistance, chat REPL, RAG, and AI agents with tool calling — all via **native code, no Python, no frameworks**. The companion repo `sigoden/llm-functions` lets you write tools as plain Bash, JavaScript, or Python functions with a simple naming convention. The formula is explicit: `AI Agent = Instructions (Prompt) + Tools (Function Callings) + Documents (RAG)`. This is the best example of building a production-grade CLI agent in a systems language.
+
+**[danielmiessler/fabric](https://github.com/danielmiessler/fabric)** — Go, OpenAI/Claude/Ollama — ⭐ ~30k+
+
+Fabric demonstrates a **Unix-native approach** to agentic workflows. Prompts are Markdown files in a `/patterns` directory; you compose them via Unix pipes: `echo "idea" | fabric --pattern write_essay | to_pdf`. Each pattern is a system prompt, and helper tools (`yt` for YouTube transcripts, `to_pdf` for conversion) are separate Go binaries. This is "tool use" at the shell level — **the pipe is the orchestrator**. No agent loop needed; the filesystem and Unix philosophy replace the framework.
+
+---
+
+## Multi-agent debate shows coordination without a coordinator
+
+**[composable-models/llm_multiagent_debate](https://github.com/composable-models/llm_multiagent_debate)** — Python, OpenAI — ⭐ ~510
+
+This ICML 2024 paper implementation puts **three LLM agents** through multi-round debate: each generates an independent response, then all responses are shared across agents, who refine their answers based on others' reasoning. Each task (math, GSM8K, biographies, MMLU) is a single script using **direct OpenAI API calls** with zero framework overhead. The results show that more agents and more debate rounds consistently improve factuality and reasoning. This repo demonstrates multi-agent coordination through the simplest possible mechanism — structured message passing.
+
+**[victordibia/designing-multiagent-systems](https://github.com/victordibia/designing-multiagent-systems)** — Python, OpenAI/Azure — ⭐ ~296
+
+The companion repo to the book "Designing Multi-Agent Systems" includes a from-scratch framework called **PicoAgents** with 50+ runnable examples. It covers round-robin orchestration, AI-driven speaker selection, plan-based orchestration (Magentic One style), sequential and parallel workflows, evaluator-optimizer loops, and DAG-based execution. Every pattern is implemented transparently. The repo also includes equivalent implementations in LangGraph and AutoGen for comparison, making it uniquely valuable for understanding **what frameworks actually do under the hood**.
+
+---
+
+## Progressive tutorials build understanding layer by layer
+
+**[shareAI-lab/claw0](https://github.com/shareAI-lab/claw0)** — Python, Anthropic Claude
+
+Build a complete agent framework **section by section** across 10 incremental steps and roughly 7,000 total lines. Section 1 (`s01_agent_loop.py`) is a bare `while True` + `stop_reason` check. Section 2 adds a tool dispatch table. Subsequent sections add sessions, persistence, WebSocket gateways, heartbeats, and concurrency — each introducing exactly **one new concept** while keeping all prior code intact. Available in English, Chinese, and Japanese. Dependencies are minimal: just `anthropic`, `python-dotenv`, `websockets`, `httpx`.
+
+**[pguso/ai-agents-from-scratch](https://github.com/pguso/ai-agents-from-scratch)** — JavaScript, local LLMs via node-llama-cpp
+
+A structured curriculum rebuilding LangChain's core abstractions from scratch in JavaScript. Eight progressive examples move from basic LLM calls through translation, batch processing, and coding to simple agents, memory agents, and full **ReAct agents**. Each lesson includes both `CODE.md` and `CONCEPT.md`. Uses **local LLMs only** (no API keys needed), making it zero-cost to learn. The explicit formula: `AI Agent = LLM + System Prompt + Tools + Memory + Reasoning Pattern`.
+
+**[disler/MinimalChainable](https://gist.github.com/disler/d51d7e37c3e5f8d277d8e0a71f4a1d2e)** — Python, any LLM (Anthropic Claude examples)
+
+A single GitHub Gist implementing prompt chaining in approximately **50 lines of core code**. The `MinimalChainable` class chains sequential prompts where each can reference prior outputs via `{output[-1]}` syntax. The companion `FusionChain` runs the same chain across multiple models simultaneously and ranks results. Zero library dependencies. Explicitly positioned as "ditching LangChain," this is the **purest possible implementation of prompt chaining** — the pattern that most "workflow" frameworks wrap in hundreds of lines of abstraction.
+
+---
+
+## Conclusion
+
+The core insight across all 14 repos is that **agentic AI reduces to a remarkably small set of primitives**. The canonical tool-use agent is 50–100 lines: define functions with JSON schemas, send them with your prompt, parse the model's tool calls, execute locally, append results, loop. Multi-agent coordination adds one more concept — handoffs or message passing. Prompt chaining is string interpolation in a for loop. The repos from Anthropic (`anthropic-cookbook/patterns/agents/`) and OpenAI (`swarm`, `openai-cookbook/Orchestrating_agents.ipynb`) deserve first attention because they're authoritative and framework-free by design. For the deepest understanding, pair them with mini-swe-agent (proving 100 lines can match production systems) and PocketFlow (proving 100 lines can be an entire framework). The frameworks aren't hiding complexity — they're wrapping simplicity.

@@ -1,16 +1,19 @@
-node_modules/
-dist/
-.next/
-.turbo/
+# Rust
+/target
+.fastembed_cache/
+
+# Database
 *.db
 *.db-wal
 *.db-shm
+
+# Environment
 .env
-.praefectus/
+
+# IDE
 .DS_Store
+
+# Vigil
+.praefectus/
 docs/plans/
 test-results/
-*.tsbuildinfo
-# Rust
-apps/daemon/target/
-.fastembed_cache/
