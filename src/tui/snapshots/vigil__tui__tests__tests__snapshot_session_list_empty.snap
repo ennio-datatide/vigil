@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+  ◉ VIGIL                                                    0 active · 0 blocke
+────────────────────────────────────────────────────────────────────────────────
+                No sessions running. Press c to chat with Vigil…                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  ↑↓ Navigate   ⏎ Open   c Chat   ? Help   q Quit

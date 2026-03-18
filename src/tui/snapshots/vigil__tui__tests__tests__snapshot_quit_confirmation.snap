@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+  ◉ VIGIL                                                    2 active · 0 blocke
+────────────────────────────────────────────────────────────────────────────────
+▌ ●  abcd  my-project            running                                        
+  ●  efgh  my-project            running                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                    2 sessions still running. Quit anyway? y                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  ↑↓ Navigate   ⏎ Open   c Chat   ? Help   q Quit

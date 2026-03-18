@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+  ◉ VIGIL                                                    0 active · 0 blocke
+────────────────────────────────────────────────────────────────────────────────
+                No sessions running. Press c to chat with Vigil…                
+                                                                                
+               ┌ Help ──────────────────────────────────────────┐               
+               │                                                │               
+               │  ↑↓        Navigate session list               │               
+               │  ⏎         Open terminal pane                  │               
+               │  c         Open chat with Vigil                │               
+               │  Tab       Switch pane (terminal view)         │               
+               │  Ctrl-D    Close pane                          │               
+               │  Esc       Go back                             │               
+               │  1         Session list                        │               
+               │  ?         Toggle this help                    │               
+               │  q         Quit                                │               
+               │  Ctrl-C    Force quit                          │               
+               │                                                │               
+               │  Press any key to close                        │               
+               │                                                │               
+               └────────────────────────────────────────────────┘               
+                                                                                
+                                                                                
+                                                                                
+  ↑↓ Navigate   ⏎ Open   c Chat   ? Help   q Quit

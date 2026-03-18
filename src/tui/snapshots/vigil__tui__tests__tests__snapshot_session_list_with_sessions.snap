@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+  ◉ VIGIL                                                    1 active · 1 blocke
+────────────────────────────────────────────────────────────────────────────────
+▌ ●  abcd  my-project            running                                        
+  ⚠  efgh  my-project            needsinput                                     
+  ✓  ijkl  my-project            completed                                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  ↑↓ Navigate   ⏎ Open   c Chat   ? Help   q Quit

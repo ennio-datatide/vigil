@@ -1,0 +1,28 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+  ◉ VIGIL · chat                                                                
+────────────────────────────────────────────────────────────────────────────────
+    you · 22:13                                                                 
+    spin up a worker to refactor the auth module                                
+                                                                                
+    vigil · 22:13                                                               
+    Spawning a worker for the auth refactor. I'll keep you posted.              
+                                                                                
+    system · 22:13                                                              
+    Worker #abcd is blocked (needsinput)                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+  › _                                                                      Esc B

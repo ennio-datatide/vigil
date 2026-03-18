@@ -1,0 +1,5 @@
+---
+source: src/tui/tests.rs
+expression: output
+---
+                  No terminal panes open. Press Esc to go back…
