@@ -3,89 +3,52 @@
 ## Build and Run
 
 ```bash
-npm install              # Install all workspace dependencies
-npm run build            # Build all workspaces (Turborepo)
-npm run dev              # Start dev servers (Vigil daemon + Next.js)
-npm test                 # Run all tests across workspaces
+cargo build              # Build the project
+cargo run -- tui         # Launch the TUI (daemon + interactive terminal UI)
+cargo run -- daemon      # Run headless daemon only (HTTP server on port 8000)
+cargo test               # Run all tests
 ```
 
 ## Project Structure
 
-Turborepo monorepo with npm workspaces:
+Single Rust crate (binary + library):
 
-- `apps/daemon` -- Rust daemon (port 8000)
-- `apps/web` -- Next.js frontend (port 3000)
-- `packages/shared` -- Shared Zod schemas and types
+- `src/lib.rs` -- Library crate root
+- `src/main.rs` -- CLI entry point (clap)
+- `src/tui/` -- Terminal UI (ratatui, tui-term, TEA architecture)
+- `src/api/` -- Minimal HTTP API (health, events, vigil chat)
+- `src/services/` -- Business logic (session-manager, vigil-manager, notifier, cleanup, recovery)
+- `src/db/` -- SQLite schema and client (sqlx)
+- `src/process/` -- PTY management, output capture
+- `src/hooks/` -- Claude Code hook installation
+- `src/events/` -- Event bus
+- `src/config.rs` -- Config resolution (`Config::resolve()`)
+- `src/deps.rs` -- Dependency injection container (`AppDeps`)
+- `migrations/` -- SQLite migrations (run automatically on startup)
 
 ## Key Conventions
 
-- **ESM everywhere** -- All packages use `"type": "module"` with `.js` extensions in imports
-- **TypeScript strict** -- `strict: true` in all tsconfig files
-- **Vitest** -- Test framework for frontend workspaces
-- **Rust (axum)** -- Backend daemon with SQLite (sqlx)
-- **Zod** -- Runtime validation for all API inputs (shared schemas in `packages/shared`)
+- **Rust (axum + ratatui)** -- TUI frontend, HTTP backend for hook ingestion
+- **TEA architecture** -- The TUI follows The Elm Architecture (Model/Update/View)
+- **SQLite (sqlx)** -- Database with compile-time checked queries
 - **No Docker** -- Runs directly on macOS
+- **Clippy pedantic** -- `clippy::pedantic` is warn-level
 
-## Test Commands
-
-```bash
-# All tests
-npm test
-
-# Daemon tests only
-cd apps/daemon && cargo test
-
-# Web tests only
-cd apps/web && npx vitest run
-```
-
-## Key Files
-
-### Daemon
-- `apps/daemon/src/lib.rs` -- Library crate root
-- `apps/daemon/src/config.rs` -- Config resolution (`Config::resolve()`)
-- `apps/daemon/src/db/` -- SQLite schema and client
-- `apps/daemon/src/api/` -- REST endpoints (sessions, projects, events, notifications, pipelines, settings, vigil)
-- `apps/daemon/src/services/` -- Business logic (session-manager, agent-spawner, pipeline-service, event-bus, vigil-manager, notifier, cleanup, recovery)
-- `apps/daemon/src/hooks/` -- Claude Code hook installation
-- `apps/daemon/src/process/` -- PTY management, output capture
-
-### Shared
-- `packages/shared/src/index.ts` -- Zod schemas: `HookPayload`, `CreateSessionInput`, session types, event types
-
-## API Endpoints
+## API Endpoints (minimal — hook ingestion only)
 
 - `GET /health` -- Health check
-- `GET /api/sessions` -- List sessions
-- `GET /api/sessions/:id` -- Get session
-- `POST /api/sessions` -- Create session (queued)
-- `DELETE /api/sessions/:id` -- Cancel session
-- `GET /api/projects` -- List projects
-- `POST /api/projects` -- Register project
-- `DELETE /api/projects/:path` -- Unregister project
 - `POST /events` -- Hook event ingestion
-- `GET /api/notifications` -- List notifications
-- `PATCH /api/notifications/:id/read` -- Mark notification read
-- `GET /api/pipelines` -- List pipelines
-- `GET /api/pipelines/:id` -- Get pipeline
-- `POST /api/pipelines` -- Create pipeline
-- `PUT /api/pipelines/:id` -- Update pipeline
-- `DELETE /api/pipelines/:id` -- Delete pipeline
-- `GET /api/settings/telegram` -- Get Telegram settings
-- `PUT /api/settings/telegram` -- Save Telegram settings
-- `WS /ws/dashboard` -- Real-time session updates
-- `WS /ws/terminal/:sessionId` -- Terminal proxy
+- `POST /api/vigil/chat` -- Vigil chat
 
 ## Testing Patterns
 
-- Daemon tests use isolated temp directories with in-memory SQLite
+- Tests use isolated temp directories with in-memory SQLite
 - Use `Config::for_testing(base)` for test configs
-- E2E tests in `apps/daemon/src/e2e/` test full API lifecycle
-- **Bug fixes MUST include a regression test** -- see `.claude/skills/bug-driven-testing.md`
+- **Bug fixes MUST include a regression test**
+- **SOLID principles, clean code, TDD**
 
 ## Code Quality
 
-- **MANDATORY PRE-COMMIT CHECKS** -- Before EVERY git commit, you MUST run: `npx biome check --write .` then `npm run build` then `npm test`. NO EXCEPTIONS. See `.claude/skills/pre-commit-checks.md`
-- **Biome** -- Linter and formatter. Always run `npx biome check --write .` before committing.
-- **SOLID principles, clean code, TDD** -- see `.claude/skills/code-quality-standards.md`
-- **Bug-driven testing** -- every bug fix starts with a failing test. See `.claude/skills/bug-driven-testing.md`
+- **MANDATORY PRE-COMMIT CHECKS** -- Before EVERY git commit, you MUST run: `cargo clippy` then `cargo test`. NO EXCEPTIONS.
+- **Clippy pedantic** -- Always run `cargo clippy` before committing.
+- **cargo fmt** -- Format code with `cargo fmt` before committing.
