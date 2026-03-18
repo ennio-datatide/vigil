@@ -47,6 +47,13 @@ anyhow = "1.0"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# TUI
+ratatui = "0.30"
+tui-term = "0.3"
+color-eyre = "0.6"
+tokio-util = { version = "0.7", features = ["rt"] }
 
 # Common types
 uuid = { version = "1.15", features = ["v4", "serde"] }
