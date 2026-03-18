@@ -186,7 +186,7 @@ impl TelegramNotifier {
         self.send_telegram(
             &config.bot_token,
             &config.chat_id,
-            "\u{1f514} *Test notification from Praefectus*\nYour Telegram integration is working!",
+            "\u{1f514} *Test notification from Vigil*\nYour Telegram integration is working!",
         )
         .await
     }
