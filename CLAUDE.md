@@ -5,7 +5,7 @@
 ```bash
 npm install              # Install all workspace dependencies
 npm run build            # Build all workspaces (Turborepo)
-npm run dev              # Start dev servers (Fastify + Next.js)
+npm run dev              # Start dev servers (Vigil daemon + Next.js)
 npm test                 # Run all tests across workspaces
 ```
 
@@ -13,18 +13,16 @@ npm test                 # Run all tests across workspaces
 
 Turborepo monorepo with npm workspaces:
 
-- `apps/server` -- Fastify 5 backend (port 4000)
-- `apps/web` -- Next.js 15 frontend (port 3000)
+- `apps/daemon` -- Rust daemon (port 8000)
+- `apps/web` -- Next.js frontend (port 3000)
 - `packages/shared` -- Shared Zod schemas and types
-- `cli` -- Commander.js CLI (`praefectus` binary)
 
 ## Key Conventions
 
 - **ESM everywhere** -- All packages use `"type": "module"` with `.js` extensions in imports
 - **TypeScript strict** -- `strict: true` in all tsconfig files
-- **Vitest** -- Test framework for all workspaces
-- **Drizzle ORM** -- Database layer with better-sqlite3 (SQLite)
-- **Fastify 5** -- Server framework with plugin architecture
+- **Vitest** -- Test framework for frontend workspaces
+- **Rust (axum)** -- Backend daemon with SQLite (sqlx)
 - **Zod** -- Runtime validation for all API inputs (shared schemas in `packages/shared`)
 - **No Docker** -- Runs directly on macOS
 
@@ -34,37 +32,26 @@ Turborepo monorepo with npm workspaces:
 # All tests
 npm test
 
-# Server tests only
-cd apps/server && npx vitest run
+# Daemon tests only
+cd apps/daemon && cargo test
 
 # Web tests only
 cd apps/web && npx vitest run
-
-# CLI tests only
-cd cli && npx vitest run
-
-# Watch mode (server)
-cd apps/server && npx vitest
 ```
 
 ## Key Files
 
-### Server
-- `apps/server/src/app.ts` -- Fastify app builder (`buildApp()`)
-- `apps/server/src/config.ts` -- Config resolution (`resolveConfig()`)
-- `apps/server/src/db/schema.ts` -- Drizzle schema (sessions, events, projects, pipelines, notifications)
-- `apps/server/src/db/client.ts` -- SQLite database client
-- `apps/server/src/routes/` -- REST endpoints (sessions, projects, events, notifications, skills, pipelines, settings, fs)
-- `apps/server/src/services/` -- Business logic (session-manager, agent-spawner, pipeline-service, event-bus, skill-manager, worktree-manager, pty-manager, output-manager, notifier, settings-service, recovery, cleanup)
-- `apps/server/src/ws/` -- WebSocket routes (dashboard, terminal)
-- `apps/server/src/hooks/` -- Claude Code hook scripts
+### Daemon
+- `apps/daemon/src/lib.rs` -- Library crate root
+- `apps/daemon/src/config.rs` -- Config resolution (`Config::resolve()`)
+- `apps/daemon/src/db/` -- SQLite schema and client
+- `apps/daemon/src/api/` -- REST endpoints (sessions, projects, events, notifications, pipelines, settings, vigil)
+- `apps/daemon/src/services/` -- Business logic (session-manager, agent-spawner, pipeline-service, event-bus, vigil-manager, notifier, cleanup, recovery)
+- `apps/daemon/src/hooks/` -- Claude Code hook installation
+- `apps/daemon/src/process/` -- PTY management, output capture
 
 ### Shared
 - `packages/shared/src/index.ts` -- Zod schemas: `HookPayload`, `CreateSessionInput`, session types, event types
-
-### CLI
-- `cli/src/index.ts` -- Entry point with Commander.js program
-- `cli/src/commands/` -- Command implementations (up, down, start, ls, auth, status, cleanup)
 
 ## API Endpoints
 
@@ -79,7 +66,6 @@ cd apps/server && npx vitest
 - `POST /events` -- Hook event ingestion
 - `GET /api/notifications` -- List notifications
 - `PATCH /api/notifications/:id/read` -- Mark notification read
-- `GET /api/skills` -- List skills
 - `GET /api/pipelines` -- List pipelines
 - `GET /api/pipelines/:id` -- Get pipeline
 - `POST /api/pipelines` -- Create pipeline
@@ -92,10 +78,9 @@ cd apps/server && npx vitest
 
 ## Testing Patterns
 
-- Tests use `buildApp({ praefectusHome: '/tmp/pf-test-...' })` for isolated in-memory SQLite
-- Routes are registered manually in tests via `app.register()`
-- Use `app.inject()` for HTTP testing (no actual server needed)
-- E2E tests in `apps/server/src/e2e/` test full API lifecycle
+- Daemon tests use isolated temp directories with in-memory SQLite
+- Use `Config::for_testing(base)` for test configs
+- E2E tests in `apps/daemon/src/e2e/` test full API lifecycle
 - **Bug fixes MUST include a regression test** -- see `.claude/skills/bug-driven-testing.md`
 
 ## Code Quality

@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { NotificationBell } from '@/components/dashboard/notification-bell';
-import { PraefectusLogo } from '@/components/ui/praefectus-logo';
 import { ToastContainer } from '@/components/ui/toast';
+import { VigilLogo } from '@/components/ui/vigil-logo';
 
 const NAV_ITEMS = [
   {
@@ -127,7 +127,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Mobile top bar */}
       {!immersive && (
         <header className="flex shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3 md:hidden">
-          <PraefectusLogo />
+          <VigilLogo />
           <NotificationBell />
         </header>
       )}
@@ -139,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }`}
       >
         <div className={`flex items-center justify-between p-4 ${collapsed ? 'px-2' : ''}`}>
-          <PraefectusLogo collapsed={collapsed} />
+          <VigilLogo collapsed={collapsed} />
         </div>
 
         <nav className={`flex-1 space-y-1 ${collapsed ? 'px-1' : 'px-3'}`}>

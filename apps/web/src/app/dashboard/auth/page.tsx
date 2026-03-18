@@ -55,7 +55,7 @@ export default function AuthPage() {
         </h3>
         <p className="mb-3 text-sm text-text-muted">
           Paste the token from your server config or run{' '}
-          <code className="text-accent">praefectus auth token</code>
+          <code className="text-accent">vigil auth token</code>
         </p>
         <input
           type="password"
@@ -82,10 +82,10 @@ export default function AuthPage() {
         </p>
         <div className="space-y-2">
           <div className="rounded-lg bg-bg font-mono text-xs p-3 border border-border-subtle text-accent">
-            praefectus auth claude
+            vigil auth claude
           </div>
           <div className="rounded-lg bg-bg font-mono text-xs p-3 border border-border-subtle text-accent">
-            praefectus auth codex
+            vigil auth codex
           </div>
         </div>
       </div>
