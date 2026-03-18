@@ -158,7 +158,15 @@ pub async fn run_tui(port: u16) -> color_eyre::Result<()> {
 
     // Run the TUI as the main task.
     let terminal = ratatui::init();
-    let result = tui::app::run(terminal, cancel, session_rx, chat_tx, chat_resp_rx).await;
+    let result = tui::app::run(
+        terminal,
+        cancel,
+        session_rx,
+        chat_tx,
+        chat_resp_rx,
+        Arc::clone(&deps.output_manager),
+    )
+    .await;
     ratatui::restore();
 
     // Clean up background tasks.

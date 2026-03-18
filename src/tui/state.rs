@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::db::models::{Session, SessionStatus};
+use crate::process::output_manager::OutputManager;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum View {
@@ -28,6 +31,7 @@ pub struct App {
     pub chat_messages: Vec<ChatMessage>,
     pub chat_input: String,
     pub chat_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    pub output_manager: Option<Arc<OutputManager>>,
     pub panes: Vec<Pane>,
     pub active_pane: usize,
     pub should_quit: bool,
@@ -71,6 +75,7 @@ impl App {
             chat_messages: Vec::new(),
             chat_input: String::new(),
             chat_tx: None,
+            output_manager: None,
             panes: Vec::new(),
             active_pane: 0,
             should_quit: false,

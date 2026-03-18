@@ -3,6 +3,7 @@
 //! Drives the render/update cycle and dispatches keyboard events to the
 //! appropriate view handler.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::Result;
@@ -12,6 +13,7 @@ use ratatui::{DefaultTerminal, Frame};
 use tokio_util::sync::CancellationToken;
 
 use crate::db::models::Session;
+use crate::process::output_manager::OutputManager;
 use crate::tui::state::{App, Message, View};
 use crate::tui::views;
 
@@ -22,17 +24,29 @@ pub async fn run(
     mut session_rx: tokio::sync::watch::Receiver<Vec<Session>>,
     chat_tx: tokio::sync::mpsc::Sender<String>,
     mut chat_resp_rx: tokio::sync::watch::Receiver<Option<String>>,
+    output_manager: Arc<OutputManager>,
 ) -> Result<()> {
     let mut app = App::new();
     app.chat_tx = Some(chat_tx);
+    app.output_manager = Some(output_manager);
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(33));
 
     loop {
         tokio::select! {
             Some(Ok(event)) = events.next() => {
-                if let Event::Key(key) = event {
-                    update(&mut app, Message::Key(key));
+                match event {
+                    Event::Key(key) => {
+                        update(&mut app, Message::Key(key));
+                    }
+                    Event::Resize(cols, rows) => {
+                        for pane in &app.panes {
+                            if let Ok(mut p) = pane.parser.write() {
+                                p.screen_mut().set_size(rows, cols);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ = tick.tick() => {
@@ -115,6 +129,53 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
     }
 }
 
+fn open_pane(app: &mut App, session_id: String) {
+    // Don't open duplicate panes for the same session — just switch to it.
+    if let Some(idx) = app.panes.iter().position(|p| p.session_id == session_id) {
+        app.active_pane = idx;
+        return;
+    }
+
+    // Limit to 4 panes — replace the active pane when at capacity.
+    if app.panes.len() >= 4 {
+        app.panes.remove(app.active_pane);
+    }
+
+    let parser = std::sync::Arc::new(std::sync::RwLock::new(
+        tui_term::vt100::Parser::new(24, 80, 0),
+    ));
+
+    // Subscribe to output and spawn a feeder task.
+    if let Some(ref om) = app.output_manager {
+        let om = Arc::clone(om);
+        let sid = session_id.clone();
+        let parser_clone = Arc::clone(&parser);
+        tokio::spawn(async move {
+            // Feed any existing buffered output first.
+            if let Some(buffer) = om.get_buffer(&sid).await {
+                if let Ok(mut p) = parser_clone.write() {
+                    p.process(&buffer);
+                }
+            }
+            // Then subscribe to live updates.
+            if let Some(mut rx) = om.subscribe(&sid).await {
+                while let Ok(data) = rx.recv().await {
+                    if let Ok(mut p) = parser_clone.write() {
+                        p.process(&data);
+                    }
+                }
+            }
+        });
+    }
+
+    let pane = crate::tui::state::Pane {
+        session_id,
+        parser,
+    };
+    app.panes.push(pane);
+    app.active_pane = app.panes.len() - 1;
+}
+
 fn handle_session_list_key(app: &mut App, key: crossterm::event::KeyEvent) {
     match key.code {
         KeyCode::Up => {
@@ -128,7 +189,13 @@ fn handle_session_list_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            app.navigate_to(View::Terminal);
+            if let Some(session) = app.sessions.get(app.selected_session) {
+                let session_id = session.id.clone();
+                open_pane(app, session_id);
+            }
+            if !app.panes.is_empty() {
+                app.navigate_to(View::Terminal);
+            }
         }
         KeyCode::Char('c') => app.navigate_to(View::Chat),
         KeyCode::Char('q') => {
