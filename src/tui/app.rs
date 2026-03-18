@@ -12,9 +12,9 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use ratatui::{DefaultTerminal, Frame};
 use tokio_util::sync::CancellationToken;
 
-use crate::db::models::Session;
+use crate::db::models::{Session, SessionStatus};
 use crate::process::output_manager::OutputManager;
-use crate::tui::state::{App, Message, View};
+use crate::tui::state::{App, ChatMessage, ChatSender, Message, View};
 use crate::tui::views;
 
 /// Run the TUI event loop until the user quits or the cancellation token fires.
@@ -83,13 +83,45 @@ pub async fn run(
     Ok(())
 }
 
+fn is_blocked(status: &SessionStatus) -> bool {
+    matches!(
+        status,
+        SessionStatus::NeedsInput | SessionStatus::AuthRequired
+    )
+}
+
 fn update(app: &mut App, msg: Message) {
     match msg {
         Message::Key(key) => handle_key(app, key),
-        Message::SessionsUpdated(sessions) => app.sessions = sessions,
+        Message::SessionsUpdated(sessions) => {
+            // Check for newly blocked sessions and push system chat messages.
+            for session in &sessions {
+                if is_blocked(&session.status) {
+                    let was_blocked = app
+                        .sessions
+                        .iter()
+                        .find(|s| s.id == session.id)
+                        .map(|s| is_blocked(&s.status))
+                        .unwrap_or(false);
+                    if !was_blocked {
+                        let short_id = &session.id[..4.min(session.id.len())];
+                        app.chat_messages.push(ChatMessage {
+                            sender: ChatSender::System,
+                            content: format!(
+                                "Worker #{} is blocked ({})",
+                                short_id,
+                                format!("{:?}", session.status).to_lowercase()
+                            ),
+                            timestamp: chrono::Utc::now(),
+                        });
+                    }
+                }
+            }
+            app.sessions = sessions;
+        }
         Message::ChatResponse(response) => {
-            app.chat_messages.push(crate::tui::state::ChatMessage {
-                sender: crate::tui::state::ChatSender::Vigil,
+            app.chat_messages.push(ChatMessage {
+                sender: ChatSender::Vigil,
                 content: response,
                 timestamp: chrono::Utc::now(),
             });
