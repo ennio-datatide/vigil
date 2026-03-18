@@ -26,7 +26,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
 
 # Vector / embedding
-lancedb = "0.26"
+lancedb = "0.27"
 lance-index = "2.0"
 fastembed = "4"
 redb = "2.4"
