@@ -46,9 +46,20 @@ impl Config {
     ///
     /// Returns an error if the home directory cannot be determined.
     pub fn resolve(port: u16) -> Result<Self> {
-        let vigil_home = dirs::home_dir()
-            .map(|h| h.join(".vigil"))
+        let home = dirs::home_dir()
             .ok_or_else(|| ConfigError::Invalid("cannot determine home directory".into()))?;
+
+        // Migrate ~/.praefectus -> ~/.vigil if needed.
+        let old_home = home.join(".praefectus");
+        let new_home = home.join(".vigil");
+        if old_home.exists() && !new_home.exists() {
+            tracing::info!("Migrating ~/.praefectus -> ~/.vigil");
+            if let Err(e) = std::fs::rename(&old_home, &new_home) {
+                tracing::warn!(error = %e, "Failed to migrate, creating fresh ~/.vigil");
+            }
+        }
+
+        let vigil_home = new_home;
 
         let db_path = vigil_home.join("vigil.db");
         let logs_dir = vigil_home.join("logs");
