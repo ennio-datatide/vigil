@@ -1,92 +1,19 @@
-//! HTTP API layer.
-//!
-//! Defines the Axum router, health endpoint, authentication middleware,
-//! and route modules.
+//! HTTP API layer — hook ingestion and health check only.
 
 pub(crate) mod events;
-pub(crate) mod filesystem;
 pub mod health;
-pub(crate) mod memory;
-pub mod middleware;
-pub(crate) mod notifications;
-pub(crate) mod pipeline_executions;
-pub(crate) mod pipelines;
-pub(crate) mod projects;
-pub(crate) mod sessions;
-pub(crate) mod settings;
-pub(crate) mod skills;
-pub(crate) mod sub_sessions;
 pub(crate) mod vigil;
-pub(crate) mod ws_dashboard;
-pub(crate) mod ws_terminal;
 
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{get, post};
 use axum::Router;
-use tower_http::cors::CorsLayer;
 
 use crate::deps::AppDeps;
 
-/// Build the full application router.
+/// Build the application router (events + health + vigil chat).
 pub fn router(deps: AppDeps) -> Router {
-    let api_routes = Router::new()
-        .route("/sessions", get(sessions::list_sessions))
-        .route("/sessions", post(sessions::create_session))
-        .route("/sessions/{id}", get(sessions::get_session))
-        .route("/sessions/{id}", delete(sessions::cancel_session))
-        .route("/sessions/{id}/remove", delete(sessions::remove_session))
-        .route("/sessions/{id}/restart", post(sessions::restart_session))
-        .route("/sessions/{id}/resume", post(sessions::resume_session))
-        .route("/sessions/{id}/input", post(sessions::send_input))
-        .route(
-            "/sessions/{id}/children",
-            get(sub_sessions::list_children),
-        )
-        .route("/sessions/{id}/spawn", post(sub_sessions::spawn_child))
-        .route("/projects", get(projects::list_projects))
-        .route("/projects", post(projects::create_project))
-        .route("/projects/{path}", delete(projects::delete_project))
-        .route("/notifications", get(notifications::list_notifications))
-        .route("/notifications/test", post(notifications::test_notification))
-        .route("/notifications/read-all", patch(notifications::read_all))
-        .route("/notifications/{id}/read", patch(notifications::mark_read))
-        .route("/skills", get(skills::list_skills))
-        .route("/pipelines", get(pipelines::list_pipelines))
-        .route("/pipelines", post(pipelines::create_pipeline))
-        .route("/pipelines/{id}", get(pipelines::get_pipeline))
-        .route("/pipelines/{id}", put(pipelines::update_pipeline))
-        .route("/pipelines/{id}", delete(pipelines::delete_pipeline))
-        .route("/pipelines/{id}/execute", post(pipeline_executions::execute_pipeline))
-        .route("/executions", get(pipeline_executions::list_executions))
-        .route("/executions/{id}", get(pipeline_executions::get_execution))
-        .route(
-            "/settings/telegram",
-            get(settings::get_telegram).put(settings::put_telegram),
-        )
-        .route("/settings/telegram/test", post(settings::test_telegram))
-        .route("/memory", get(memory::list_memories))
-        .route("/memory", post(memory::create_memory))
-        .route("/memory/search", post(memory::search_memories))
-        .route("/memory/{id}", delete(memory::delete_memory))
-        .route("/fs/dirs", get(filesystem::list_dirs))
-        .route("/vigil/status", get(vigil::get_status))
-        .route("/vigil/chat", post(vigil::chat))
-        .route("/vigil/acta", get(vigil::get_acta).put(vigil::update_acta))
-        .route("/vigil/history", get(vigil::get_history).delete(vigil::clear_history))
-        .layer(axum::middleware::from_fn_with_state(
-            deps.clone(),
-            middleware::auth,
-        ));
-
     Router::new()
         .route("/health", get(health::health))
-        .route("/openapi.json", get(health::openapi_spec))
         .route("/events", post(events::ingest_event))
-        .route("/ws/dashboard", get(ws_dashboard::ws_dashboard))
-        .route(
-            "/ws/terminal/{session_id}",
-            get(ws_terminal::ws_terminal),
-        )
-        .nest("/api", api_routes)
-        .layer(CorsLayer::permissive())
+        .route("/api/vigil/chat", post(vigil::chat))
         .with_state(deps)
 }

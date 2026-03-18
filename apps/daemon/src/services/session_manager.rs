@@ -1,8 +1,7 @@
 //! Session event processing service.
 //!
 //! [`SessionManager`] subscribes to [`AppEvent`]s on the event bus and
-//! processes hook events to update session state, create notifications,
-//! and advance pipelines when sessions complete.
+//! processes hook events to update session state and create notifications.
 
 #![allow(dead_code)] // Service is wired up in Task 1.16.
 
@@ -17,8 +16,7 @@ use crate::deps::AppDeps;
 use crate::events::{AppEvent, EventBus};
 use crate::services::escalation::EscalationService;
 use crate::services::notification_store::NotificationStore;
-use crate::services::pipeline_store::PipelineStore;
-use crate::services::session_store::{CreateSessionInput, SessionStore};
+use crate::services::session_store::SessionStore;
 
 /// Processes hook events and manages session lifecycle transitions.
 pub(crate) struct SessionManager {
@@ -83,16 +81,6 @@ impl SessionManager {
                             SessionStatus::NeedsInput | SessionStatus::AuthRequired
                         ) {
                             self.escalation_service.cancel_timer(&session_id).await;
-                        }
-
-                        if new_status == SessionStatus::Completed
-                            && let Err(e) = self.advance_pipeline(&session_id).await
-                        {
-                            tracing::error!(
-                                session_id,
-                                error = %e,
-                                "pipeline advancement failed"
-                            );
                         }
 
                         // Detect child session completion and emit ChildCompleted.
@@ -251,76 +239,6 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Advance a pipeline after a session completes.
-    ///
-    /// If the completed session belongs to a pipeline and there is a next step
-    /// connected via an edge, a new session is created for that step.
-    async fn advance_pipeline(&self, session_id: &str) -> anyhow::Result<()> {
-        let session_store = SessionStore::new(self.db.clone());
-        let Some(session) = session_store.get(session_id).await? else {
-            return Ok(());
-        };
-
-        let Some(pipeline_id) = &session.pipeline_id else {
-            return Ok(());
-        };
-        let Some(step_index) = session.pipeline_step_index else {
-            return Ok(());
-        };
-
-        let pipeline_store = PipelineStore::new(self.db.clone());
-        let Some(pipeline) = pipeline_store.get(pipeline_id).await? else {
-            return Ok(());
-        };
-
-        // Find current step and its outgoing edge.
-        let step_usize = usize::try_from(step_index)?;
-        let Some(current) = pipeline.steps.get(step_usize) else {
-            return Ok(());
-        };
-
-        // Find next step via edges.
-        let next_step_id = pipeline
-            .edges
-            .iter()
-            .find(|e| e.source == current.id)
-            .map(|e| &e.target);
-
-        let Some(next_id) = next_step_id else {
-            return Ok(()); // No more steps -- pipeline is done.
-        };
-
-        let Some(next_idx) = pipeline.steps.iter().position(|s| s.id == *next_id) else {
-            return Ok(());
-        };
-        let next = &pipeline.steps[next_idx];
-
-        // Create a new session for the next step.
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let input = CreateSessionInput {
-            project_path: session.project_path,
-            prompt: next.prompt.clone(),
-            skill: next.skill.clone(),
-            role: None,
-            parent_id: Some(session_id.to_string()),
-            spawn_type: None,
-            skip_permissions: None,
-            pipeline_id: Some(pipeline_id.clone()),
-        };
-
-        let _created = session_store.create(&new_id, &input).await?;
-
-        // Set the pipeline step index on the new session.
-        let new_session = session_store
-            .set_pipeline_step_index(&new_id, i32::try_from(next_idx)?)
-            .await?;
-
-        let _ = self.event_bus.emit(AppEvent::SessionUpdate {
-            session: new_session,
-        });
-
-        Ok(())
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -332,9 +250,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    use crate::db::models::{PipelineEdge, PipelineStep, Position};
     use crate::db::sqlite::SqliteDb;
-    use crate::services::pipeline_store::CreatePipelineInput;
     use tempfile::TempDir;
 
     /// Create a test `SessionManager` with a short escalation timeout.
@@ -508,139 +424,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pipeline_advancement_creates_next_session() {
-        let (db, _dir) = test_db().await;
-        let event_bus = Arc::new(EventBus::new(64));
-
-        // Create a two-step pipeline.
-        let pipeline_store = PipelineStore::new(db.clone());
-        let pipeline = pipeline_store
-            .create(CreatePipelineInput {
-                name: "Test Pipeline".to_string(),
-                description: String::new(),
-                steps: vec![
-                    PipelineStep {
-                        id: "step-1".to_string(),
-                        label: "Implement".to_string(),
-                        prompt: "Write the code".to_string(),
-                        skill: Some("coding".to_string()),
-                        position: Position { x: 0.0, y: 0.0 },
-                    },
-                    PipelineStep {
-                        id: "step-2".to_string(),
-                        label: "Test".to_string(),
-                        prompt: "Write tests".to_string(),
-                        skill: Some("testing".to_string()),
-                        position: Position { x: 100.0, y: 0.0 },
-                    },
-                ],
-                edges: vec![PipelineEdge {
-                    id: "edge-1".to_string(),
-                    source: "step-1".to_string(),
-                    target: "step-2".to_string(),
-                }],
-                is_default: false,
-            })
-            .await
-            .unwrap();
-
-        // Create a session for step-1.
-        let session_store = SessionStore::new(db.clone());
-        let input = CreateSessionInput {
-            project_path: "/tmp/proj".into(),
-            prompt: "Write the code".into(),
-            skill: Some("coding".into()),
-            role: None,
-            parent_id: None,
-            spawn_type: None,
-            skip_permissions: None,
-            pipeline_id: Some(pipeline.id.clone()),
-        };
-        session_store.create("sess-1", &input).await.unwrap();
-        session_store
-            .set_pipeline_step_index("sess-1", 0)
-            .await
-            .unwrap();
-
-        // Complete the session.
-        session_store
-            .update_status(
-                "sess-1",
-                SessionStatus::Completed,
-                None,
-                Some(1_700_000_000_000),
-            )
-            .await
-            .unwrap();
-
-        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
-
-        manager.advance_pipeline("sess-1").await.unwrap();
-
-        // Verify a new session was created.
-        let all_sessions = session_store.list().await.unwrap();
-        assert_eq!(all_sessions.len(), 2);
-
-        // Find the new session (not sess-1).
-        let new_session = all_sessions.iter().find(|s| s.id != "sess-1").unwrap();
-        assert_eq!(new_session.prompt, "Write tests");
-        assert_eq!(new_session.pipeline_id, Some(pipeline.id.clone()));
-        assert_eq!(new_session.pipeline_step_index, Some(1));
-        assert_eq!(new_session.parent_id, Some("sess-1".to_string()));
-        assert_eq!(new_session.status, SessionStatus::Queued);
-    }
-
-    #[tokio::test]
-    async fn pipeline_advancement_no_next_step() {
-        let (db, _dir) = test_db().await;
-        let event_bus = Arc::new(EventBus::new(64));
-
-        // Single-step pipeline with no edges.
-        let pipeline_store = PipelineStore::new(db.clone());
-        let pipeline = pipeline_store
-            .create(CreatePipelineInput {
-                name: "Single Step".to_string(),
-                description: String::new(),
-                steps: vec![PipelineStep {
-                    id: "step-1".to_string(),
-                    label: "Only step".to_string(),
-                    prompt: "Do it".to_string(),
-                    skill: None,
-                    position: Position { x: 0.0, y: 0.0 },
-                }],
-                edges: vec![],
-                is_default: false,
-            })
-            .await
-            .unwrap();
-
-        let session_store = SessionStore::new(db.clone());
-        let input = CreateSessionInput {
-            project_path: "/tmp/proj".into(),
-            prompt: "Do it".into(),
-            skill: None,
-            role: None,
-            parent_id: None,
-            spawn_type: None,
-            skip_permissions: None,
-            pipeline_id: Some(pipeline.id.clone()),
-        };
-        session_store.create("sess-1", &input).await.unwrap();
-        session_store
-            .set_pipeline_step_index("sess-1", 0)
-            .await
-            .unwrap();
-
-        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
-
-        // Should be a no-op -- no next step.
-        manager.advance_pipeline("sess-1").await.unwrap();
-
-        let all_sessions = session_store.list().await.unwrap();
-        assert_eq!(all_sessions.len(), 1);
-    }
-
-    #[tokio::test]
     async fn child_completion_emits_event() {
         let (db, _dir) = test_db().await;
         let event_bus = Arc::new(EventBus::new(64));
@@ -780,26 +563,6 @@ mod tests {
         let notifications = notif_store.list(false).await.unwrap();
         assert_eq!(notifications.len(), 1);
         assert!(notifications[0].message.contains("failed"));
-    }
-
-    #[tokio::test]
-    async fn pipeline_advancement_skipped_without_pipeline() {
-        let (db, _dir) = test_db().await;
-        let event_bus = Arc::new(EventBus::new(64));
-
-        let session_store = SessionStore::new(db.clone());
-        session_store
-            .create("sess-1", &sample_session_input())
-            .await
-            .unwrap();
-
-        let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
-
-        // Should be a no-op -- no pipeline_id.
-        manager.advance_pipeline("sess-1").await.unwrap();
-
-        let all_sessions = session_store.list().await.unwrap();
-        assert_eq!(all_sessions.len(), 1);
     }
 
     #[tokio::test]
