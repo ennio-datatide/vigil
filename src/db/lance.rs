@@ -17,8 +17,8 @@ use futures::TryStreamExt;
 use lance_index::scalar::FullTextSearchQuery;
 use lancedb::connection::{ConnectBuilder, Connection};
 use lancedb::database::CreateTableMode;
-use lancedb::index::scalar::FtsIndexBuilder;
 use lancedb::index::Index;
+use lancedb::index::scalar::FtsIndexBuilder;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use tracing::{debug, info};
 
@@ -131,10 +131,7 @@ impl LanceDb {
         let table = self.open_table().await?;
         let batch = Self::build_batch(id, content, project_path, embedding)?;
         let schema = batch.schema();
-        let reader = Box::new(RecordBatchIterator::new(
-            vec![Ok(batch)],
-            schema,
-        ));
+        let reader = Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
 
         let mut builder = table.merge_insert(&["id"]);
         builder
@@ -166,7 +163,11 @@ impl LanceDb {
             .vector_search(embedding.to_vec())
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?
             .limit(limit)
-            .select(lancedb::query::Select::columns(&["id", "content", "project_path"]))
+            .select(lancedb::query::Select::columns(&[
+                "id",
+                "content",
+                "project_path",
+            ]))
             .execute()
             .await
             .map_err(|e| MemoryError::VectorStore(e.to_string()))?;
@@ -314,10 +315,7 @@ impl LanceDb {
     // -----------------------------------------------------------------------
 
     /// Extract a `StringArray` column by name from a `RecordBatch`.
-    fn string_col<'a>(
-        batch: &'a RecordBatch,
-        name: &str,
-    ) -> Result<&'a StringArray, MemoryError> {
+    fn string_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a StringArray, MemoryError> {
         batch
             .column_by_name(name)
             .ok_or_else(|| MemoryError::VectorStore(format!("missing {name} column")))?
@@ -389,12 +387,10 @@ impl LanceDb {
         let field = Arc::new(Field::new("item", DataType::Float32, true));
         let vector_arr = Arc::new(FixedSizeListArray::new(field, EMBEDDING_DIM, values, None));
 
-        RecordBatch::try_new(Self::table_schema(), vec![
-            id_arr,
-            content_arr,
-            project_path_arr,
-            vector_arr,
-        ])
+        RecordBatch::try_new(
+            Self::table_schema(),
+            vec![id_arr, content_arr, project_path_arr, vector_arr],
+        )
         .map_err(|e| MemoryError::VectorStore(e.to_string()))
     }
 }

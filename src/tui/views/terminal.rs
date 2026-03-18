@@ -49,12 +49,7 @@ fn compute_pane_layout(count: usize, area: Rect) -> Vec<Rect> {
     }
 }
 
-fn render_pane(
-    pane: &crate::tui::state::Pane,
-    is_active: bool,
-    frame: &mut Frame,
-    area: Rect,
-) {
+fn render_pane(pane: &crate::tui::state::Pane, is_active: bool, frame: &mut Frame, area: Rect) {
     let id_short = &pane.session_id[..4.min(pane.session_id.len())];
     let border_style = if is_active {
         theme::border_focus()

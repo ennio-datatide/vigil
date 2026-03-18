@@ -69,11 +69,7 @@ fn render_sessions(app: &App, frame: &mut Frame, area: Rect) {
             let (icon, icon_style) = status_icon(&session.status);
 
             let id_short = &session.id[..4.min(session.id.len())];
-            let project = session
-                .project_path
-                .split('/')
-                .last()
-                .unwrap_or("unknown");
+            let project = session.project_path.split('/').last().unwrap_or("unknown");
 
             let line_style = if is_blocked(&session.status) {
                 theme::status_blocked()

@@ -5,11 +5,11 @@
 //! real OS PTY allocation with SIGWINCH support.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use portable_pty::MasterPty;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 /// Handle to a running PTY process.
 pub(crate) struct PtyHandle {
@@ -50,10 +50,7 @@ impl PtyManager {
 
     /// Register a PTY handle for a session.
     pub(crate) async fn register(&self, session_id: &str, handle: PtyHandle) {
-        self.ptys
-            .lock()
-            .await
-            .insert(session_id.to_owned(), handle);
+        self.ptys.lock().await.insert(session_id.to_owned(), handle);
     }
 
     /// Check if a PTY is alive for the given session.
@@ -124,9 +121,9 @@ impl PtyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::io::Read;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     /// Helper: spawn /bin/cat inside a real PTY and register it.
     /// Returns (manager, session_id, reader) where reader is the master read handle.
@@ -193,7 +190,10 @@ mod tests {
         // cat echoes input back through the PTY
         let n = reader.read(&mut buf).unwrap();
         let output = String::from_utf8_lossy(&buf[..n]);
-        assert!(output.contains("hello"), "Expected echoed input, got: {output}");
+        assert!(
+            output.contains("hello"),
+            "Expected echoed input, got: {output}"
+        );
 
         manager.kill(&sid).await;
     }

@@ -224,13 +224,12 @@ impl SessionStore {
         id: &str,
         step_index: i32,
     ) -> Result<Session> {
-        let result =
-            sqlx::query("UPDATE sessions SET pipeline_step_index = ? WHERE id = ?")
-                .bind(step_index)
-                .bind(id)
-                .execute(self.db.pool())
-                .await
-                .map_err(DbError::from)?;
+        let result = sqlx::query("UPDATE sessions SET pipeline_step_index = ? WHERE id = ?")
+            .bind(step_index)
+            .bind(id)
+            .execute(self.db.pool())
+            .await
+            .map_err(DbError::from)?;
 
         if result.rows_affected() == 0 {
             return Err(crate::error::Error::NotFound(format!("session {id}")));
@@ -281,9 +280,7 @@ pub(crate) fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> Result<Session> {
 
     let status = parse_status(row.get::<String, _>("status").as_str());
     let agent_type = parse_agent_type(row.get::<String, _>("agent_type").as_str());
-    let role: Option<SessionRole> = row
-        .get::<Option<String>, _>("role")
-        .map(|s| parse_role(&s));
+    let role: Option<SessionRole> = row.get::<Option<String>, _>("role").map(|s| parse_role(&s));
     let exit_reason: Option<ExitReason> = row
         .get::<Option<String>, _>("exit_reason")
         .map(|s| parse_exit_reason(&s));

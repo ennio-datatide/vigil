@@ -42,12 +42,11 @@ impl SettingsStore {
     ///
     /// Returns an error if the query fails.
     pub(crate) async fn get(&self, key: &str) -> Result<Option<String>> {
-        let row: Option<(String,)> =
-            sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-                .bind(key)
-                .fetch_optional(self.db.pool())
-                .await
-                .map_err(DbError::from)?;
+        let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(self.db.pool())
+            .await
+            .map_err(DbError::from)?;
 
         Ok(row.map(|(v,)| v))
     }

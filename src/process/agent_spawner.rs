@@ -5,10 +5,10 @@
 //! session status.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
 use crate::config::Config;
@@ -71,28 +71,27 @@ impl AgentSpawner {
         pre_trust_directory(&work_dir);
 
         // Spawn claude inside a real PTY.
-        let (master, child, reader, writer) =
-            match spawn_claude_pty(&work_dir, continue_session) {
-                Ok(result) => result,
-                Err(e) => {
-                    // PTY allocation failed — mark session as Failed.
-                    let store2 = SessionStore::new(Arc::clone(&self.db));
-                    let _ = store2
-                        .update_status(
-                            &session_id,
-                            SessionStatus::Failed,
-                            Some(ExitReason::Error),
-                            Some(chrono::Utc::now().timestamp_millis()),
-                        )
-                        .await;
-                    if let Ok(Some(updated)) = store2.get(&session_id).await {
-                        let _ = self.event_bus.emit(AppEvent::SessionUpdate {
-                            session: updated,
-                        });
-                    }
-                    return Err(e);
+        let (master, child, reader, writer) = match spawn_claude_pty(&work_dir, continue_session) {
+            Ok(result) => result,
+            Err(e) => {
+                // PTY allocation failed — mark session as Failed.
+                let store2 = SessionStore::new(Arc::clone(&self.db));
+                let _ = store2
+                    .update_status(
+                        &session_id,
+                        SessionStatus::Failed,
+                        Some(ExitReason::Error),
+                        Some(chrono::Utc::now().timestamp_millis()),
+                    )
+                    .await;
+                if let Ok(Some(updated)) = store2.get(&session_id).await {
+                    let _ = self
+                        .event_bus
+                        .emit(AppEvent::SessionUpdate { session: updated });
                 }
-            };
+                return Err(e);
+            }
+        };
 
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -152,9 +151,9 @@ impl AgentSpawner {
 
         // Emit session spawned event.
         if let Ok(Some(updated)) = store.get(&session_id).await {
-            let _ = self.event_bus.emit(AppEvent::SessionSpawned {
-                session: updated,
-            });
+            let _ = self
+                .event_bus
+                .emit(AppEvent::SessionSpawned { session: updated });
         }
 
         Ok(())
@@ -246,9 +245,9 @@ impl AgentSpawner {
 
         // Emit session spawned event.
         if let Ok(Some(updated)) = store.get(&session_id).await {
-            let _ = self.event_bus.emit(AppEvent::SessionSpawned {
-                session: updated,
-            });
+            let _ = self
+                .event_bus
+                .emit(AppEvent::SessionSpawned { session: updated });
         }
 
         Ok(())
@@ -266,10 +265,7 @@ impl AgentSpawner {
     // -----------------------------------------------------------------------
 
     /// Create worktree, install hooks, capture git metadata, and update the DB.
-    async fn prepare_session(
-        &self,
-        session: &Session,
-    ) -> anyhow::Result<(String, SessionStore)> {
+    async fn prepare_session(&self, session: &Session) -> anyhow::Result<(String, SessionStore)> {
         let session_id = &session.id;
 
         // Create worktree (or fall back to project dir).
@@ -290,9 +286,7 @@ impl AgentSpawner {
             .join("skills")
             .join("patterns");
         if patterns_src.exists() {
-            let skills_dst = Path::new(&work_dir)
-                .join(".claude")
-                .join("skills");
+            let skills_dst = Path::new(&work_dir).join(".claude").join("skills");
             std::fs::create_dir_all(&skills_dst)
                 .map_err(|e| anyhow::anyhow!("failed to create skills dir: {e}"))?;
             crate::services::vigil_manager::copy_dir_recursive(&patterns_src, &skills_dst)?;
@@ -311,7 +305,12 @@ impl AgentSpawner {
         let store = SessionStore::new(Arc::clone(&self.db));
         let now_ms = chrono::Utc::now().timestamp_millis();
         store
-            .update_running(session_id, worktree_path.as_deref(), now_ms, git_metadata.as_ref())
+            .update_running(
+                session_id,
+                worktree_path.as_deref(),
+                now_ms,
+                git_metadata.as_ref(),
+            )
             .await?;
 
         Ok((work_dir, store))
@@ -352,8 +351,7 @@ impl AgentSpawner {
                     .await
                 {
                     Ok(updated) => {
-                        let _ =
-                            event_bus.emit(AppEvent::SessionUpdate { session: updated });
+                        let _ = event_bus.emit(AppEvent::SessionUpdate { session: updated });
                     }
                     Err(e) => {
                         tracing::error!(
@@ -402,9 +400,7 @@ impl AgentSpawner {
                     // the spawn_worker polling detected needs_input and Vigil
                     // is asking the user). If so, don't exit — wait for the
                     // next Stop event after the user replies.
-                    let store = crate::services::session_store::SessionStore::new(
-                        Arc::clone(&db),
-                    );
+                    let store = crate::services::session_store::SessionStore::new(Arc::clone(&db));
                     if let Ok(Some(session)) = store.get(&sid).await {
                         if session.status == crate::db::models::SessionStatus::NeedsInput {
                             tracing::info!(session_id = %sid, "skipping auto-exit — worker needs input");
@@ -500,10 +496,7 @@ type PtySpawnResult = (
 );
 
 /// Spawn `claude` inside a real PTY. Returns (master, child, reader, writer).
-fn spawn_claude_pty(
-    work_dir: &str,
-    continue_session: bool,
-) -> anyhow::Result<PtySpawnResult> {
+fn spawn_claude_pty(work_dir: &str, continue_session: bool) -> anyhow::Result<PtySpawnResult> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -748,7 +741,15 @@ mod tests {
         let (db, _dir) = test_db().await;
 
         // Create parent.
-        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+        insert_session(
+            &db,
+            "parent-1",
+            "main task",
+            None,
+            None,
+            SessionStatus::Running,
+        )
+        .await;
 
         // Create two active children.
         insert_session(
@@ -793,7 +794,15 @@ mod tests {
         let (db, _dir) = test_db().await;
 
         // Create parent.
-        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+        insert_session(
+            &db,
+            "parent-1",
+            "main task",
+            None,
+            None,
+            SessionStatus::Running,
+        )
+        .await;
 
         // Create a completed child — should be excluded.
         insert_session(
@@ -820,22 +829,35 @@ mod tests {
         let (db, _dir) = test_db().await;
 
         // Create parent with no children at all.
-        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+        insert_session(
+            &db,
+            "parent-1",
+            "main task",
+            None,
+            None,
+            SessionStatus::Running,
+        )
+        .await;
 
         let block = generate_children_status_block(&db, "parent-1")
             .await
             .unwrap();
-        assert!(
-            block.is_none(),
-            "should return None when no children exist"
-        );
+        assert!(block.is_none(), "should return None when no children exist");
     }
 
     #[tokio::test]
     async fn status_block_truncates_long_prompts() {
         let (db, _dir) = test_db().await;
 
-        insert_session(&db, "parent-1", "main task", None, None, SessionStatus::Running).await;
+        insert_session(
+            &db,
+            "parent-1",
+            "main task",
+            None,
+            None,
+            SessionStatus::Running,
+        )
+        .await;
 
         let long_prompt = "A".repeat(100);
         insert_session(
@@ -870,10 +892,10 @@ mod pty_spawn_tests {
     use super::*;
     use crate::process::output_manager::OutputManager;
     use crate::process::pty_manager::{PtyHandle, PtyManager};
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-    use std::sync::atomic::AtomicBool;
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::sync::Arc;
-    use tokio::time::{sleep, Duration};
+    use std::sync::atomic::AtomicBool;
+    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn test_pty_spawn_and_output_capture() {

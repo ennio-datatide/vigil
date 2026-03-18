@@ -327,7 +327,6 @@ impl VigilService {
 
         Ok(sections.join("\n"))
     }
-
 }
 
 /// Truncate a string to a maximum length, appending "..." if truncated.
@@ -356,7 +355,12 @@ mod tests {
     use crate::services::session_store::{CreateSessionInput, SessionStore};
 
     /// Build an isolated test environment with all Vigil dependencies.
-    async fn test_deps() -> (VigilService, Arc<SqliteDb>, Arc<EventBus>, tempfile::TempDir) {
+    async fn test_deps() -> (
+        VigilService,
+        Arc<SqliteDb>,
+        Arc<EventBus>,
+        tempfile::TempDir,
+    ) {
         let dir = tempfile::TempDir::new().unwrap();
         let config = crate::config::Config::for_testing(dir.path());
         config.ensure_dirs().unwrap();
@@ -466,10 +470,7 @@ mod tests {
         assert_eq!(memories.len(), 1);
         assert!(memories[0].content.contains("Session completed: sess-1"));
         assert!(memories[0].content.contains("fix the bug in auth module"));
-        assert_eq!(
-            memories[0].source_session_id,
-            Some("sess-1".to_string())
-        );
+        assert_eq!(memories[0].source_session_id, Some("sess-1".to_string()));
         assert!(
             (memories[0].importance - 0.3).abs() < f64::EPSILON,
             "importance should be 0.3 for completion records"

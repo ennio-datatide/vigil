@@ -228,10 +228,7 @@ fn filter_by_project<'a>(
     project_path: Option<&str>,
 ) -> Vec<&'a SearchResult> {
     match project_path {
-        Some(path) => results
-            .iter()
-            .filter(|r| r.project_path == path)
-            .collect(),
+        Some(path) => results.iter().filter(|r| r.project_path == path).collect(),
         None => results.iter().collect(),
     }
 }
@@ -246,8 +243,8 @@ use crate::services::memory_store::row_to_memory;
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::services::memory_store::{CreateMemoryInput, MemoryStore};
     use crate::db::models::MemoryType;
+    use crate::services::memory_store::{CreateMemoryInput, MemoryStore};
 
     /// Create an isolated test environment with SQLite, LanceDB, and both stores.
     async fn test_deps() -> (tempfile::TempDir, MemoryStore, MemorySearch) {
@@ -314,14 +311,44 @@ mod tests {
     async fn rrf_scoring_produces_correct_order() {
         // Pure unit test of the RRF function — no DB needed.
         let vec_results = vec![
-            SearchResult { id: "a".into(), content: String::new(), project_path: String::new(), distance: 0.1 },
-            SearchResult { id: "b".into(), content: String::new(), project_path: String::new(), distance: 0.2 },
-            SearchResult { id: "c".into(), content: String::new(), project_path: String::new(), distance: 0.3 },
+            SearchResult {
+                id: "a".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 0.1,
+            },
+            SearchResult {
+                id: "b".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 0.2,
+            },
+            SearchResult {
+                id: "c".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 0.3,
+            },
         ];
         let fts_results = vec![
-            SearchResult { id: "b".into(), content: String::new(), project_path: String::new(), distance: 5.0 },
-            SearchResult { id: "d".into(), content: String::new(), project_path: String::new(), distance: 3.0 },
-            SearchResult { id: "a".into(), content: String::new(), project_path: String::new(), distance: 1.0 },
+            SearchResult {
+                id: "b".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 5.0,
+            },
+            SearchResult {
+                id: "d".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 3.0,
+            },
+            SearchResult {
+                id: "a".into(),
+                content: String::new(),
+                project_path: String::new(),
+                distance: 1.0,
+            },
         ];
 
         let vec_refs: Vec<&SearchResult> = vec_results.iter().collect();
@@ -359,7 +386,8 @@ mod tests {
         // The most relevant result should mention Rust or memory safety.
         let top_content = &results[0].memory.content;
         assert!(
-            top_content.contains("Rust") || top_content.contains("memory safety")
+            top_content.contains("Rust")
+                || top_content.contains("memory safety")
                 || top_content.contains("borrow"),
             "top result should be relevant: {top_content}"
         );
@@ -374,14 +402,21 @@ mod tests {
         let (_dir, store, search) = test_deps().await;
         seed_memories(&store, &search).await;
 
-        let results = search.lance.full_text_search("ownership borrowing", 5).await.unwrap();
+        let results = search
+            .lance
+            .full_text_search("ownership borrowing", 5)
+            .await
+            .unwrap();
 
         assert!(!results.is_empty(), "FTS should return results");
         // At least one result should contain "ownership" or "borrowing".
-        let has_match = results.iter().any(|r| {
-            r.content.contains("ownership") || r.content.contains("borrowing")
-        });
-        assert!(has_match, "FTS should find content matching the query terms");
+        let has_match = results
+            .iter()
+            .any(|r| r.content.contains("ownership") || r.content.contains("borrowing"));
+        assert!(
+            has_match,
+            "FTS should find content matching the query terms"
+        );
     }
 
     #[tokio::test]
@@ -389,7 +424,10 @@ mod tests {
         let (_dir, store, search) = test_deps().await;
         seed_memories(&store, &search).await;
 
-        let results = search.search("Rust ownership borrow checker", None, 5).await.unwrap();
+        let results = search
+            .search("Rust ownership borrow checker", None, 5)
+            .await
+            .unwrap();
 
         assert!(!results.is_empty(), "hybrid search should return results");
         // Scores should be in descending order.

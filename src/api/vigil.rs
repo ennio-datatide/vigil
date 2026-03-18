@@ -50,9 +50,7 @@ fn default_limit() -> i64 {
 }
 
 /// `GET /api/vigil/status` — list all active Vigils and their status.
-pub(crate) async fn get_status(
-    State(deps): State<AppDeps>,
-) -> Result<impl IntoResponse> {
+pub(crate) async fn get_status(State(deps): State<AppDeps>) -> Result<impl IntoResponse> {
     let active_projects = deps.vigil_service.active_projects().await;
     Ok(Json(StatusResponse { active_projects }))
 }
@@ -137,7 +135,9 @@ async fn try_reply_to_waiting_worker(
     match result {
         Ok(response) if !response.is_empty() => Some(Ok(response)),
         Ok(_) => Some(Ok("Worker finished but produced no response.".to_string())),
-        Err(_) => Some(Ok("Worker is still running. Check the session monitor.".to_string())),
+        Err(_) => Some(Ok(
+            "Worker is still running. Check the session monitor.".to_string()
+        )),
     }
 }
 
@@ -287,7 +287,6 @@ pub(crate) async fn clear_history(State(deps): State<AppDeps>) -> Result<impl In
     Ok(Json(json!({ "ok": true })))
 }
 
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -332,7 +331,10 @@ mod tests {
             "message": "Hello Vigil"
         });
 
-        let resp = app.oneshot(post_json("/api/vigil/chat", &body)).await.unwrap();
+        let resp = app
+            .oneshot(post_json("/api/vigil/chat", &body))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
         let json = json_body(resp).await;

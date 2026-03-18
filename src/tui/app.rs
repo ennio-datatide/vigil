@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::Result;
-use futures::StreamExt;
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
+use futures::StreamExt;
 use ratatui::{DefaultTerminal, Frame};
 use tokio_util::sync::CancellationToken;
 
@@ -182,9 +182,9 @@ fn open_pane(app: &mut App, session_id: String) {
         app.panes.remove(app.active_pane);
     }
 
-    let parser = std::sync::Arc::new(std::sync::RwLock::new(
-        tui_term::vt100::Parser::new(24, 80, 0),
-    ));
+    let parser = std::sync::Arc::new(std::sync::RwLock::new(tui_term::vt100::Parser::new(
+        24, 80, 0,
+    )));
 
     // Subscribe to output and spawn a feeder task.
     if let Some(ref om) = app.output_manager {
@@ -209,10 +209,7 @@ fn open_pane(app: &mut App, session_id: String) {
         });
     }
 
-    let pane = crate::tui::state::Pane {
-        session_id,
-        parser,
-    };
+    let pane = crate::tui::state::Pane { session_id, parser };
     app.panes.push(pane);
     app.active_pane = app.panes.len() - 1;
 }
@@ -335,10 +332,9 @@ fn view(app: &App, frame: &mut Frame) {
     let area = frame.area();
 
     if area.width < 80 || area.height < 24 {
-        let msg =
-            ratatui::widgets::Paragraph::new("Terminal too small (need 80\u{d7}24)\u{2026}")
-                .style(crate::tui::theme::muted())
-                .alignment(ratatui::layout::Alignment::Center);
+        let msg = ratatui::widgets::Paragraph::new("Terminal too small (need 80\u{d7}24)\u{2026}")
+            .style(crate::tui::theme::muted())
+            .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(msg, area);
         return;
     }
@@ -361,12 +357,8 @@ fn view(app: &App, frame: &mut Frame) {
         ))
         .style(crate::tui::theme::status_blocked())
         .alignment(ratatui::layout::Alignment::Center);
-        let popup_area = ratatui::layout::Rect::new(
-            area.width / 4,
-            area.height / 2,
-            area.width / 2,
-            1,
-        );
+        let popup_area =
+            ratatui::layout::Rect::new(area.width / 4, area.height / 2, area.width / 2, 1);
         frame.render_widget(popup, popup_area);
     }
 }

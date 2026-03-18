@@ -97,9 +97,7 @@ pub fn build_context_chain(
         .iter()
         .zip(outputs.iter())
         .enumerate()
-        .map(|(i, (label, output))| {
-            format!("## Step {}: {} (completed)\n{}", i + 1, label, output)
-        })
+        .map(|(i, (label, output))| format!("## Step {}: {} (completed)\n{}", i + 1, label, output))
         .collect();
 
     // Truncate oldest steps if total exceeds limit, keeping most recent 2
@@ -119,7 +117,10 @@ pub fn build_context_chain(
         result.push_str("\n</previous_steps>\n\n");
     }
 
-    let _ = write!(result, "<current_step>\n{current_step_prompt}\n</current_step>");
+    let _ = write!(
+        result,
+        "<current_step>\n{current_step_prompt}\n</current_step>"
+    );
 
     result
 }

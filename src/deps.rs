@@ -100,8 +100,7 @@ impl AppDeps {
         let event_bus = Arc::new(event_bus);
         let memory_store = MemoryStore::new(Arc::clone(&db), lance.clone());
         let memory_search = MemorySearch::new(Arc::clone(&db), lance.clone());
-        let sub_session_service =
-            SubSessionService::new(Arc::clone(&db), Arc::clone(&event_bus));
+        let sub_session_service = SubSessionService::new(Arc::clone(&db), Arc::clone(&event_bus));
         let vigil_chat_store = VigilChatStore::new(Arc::clone(&db));
         let vigil_service = Arc::new(VigilService::new(
             Arc::clone(&event_bus),

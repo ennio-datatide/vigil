@@ -3,9 +3,8 @@
 //! Provides the core server logic: configuration, database, event bus,
 //! HTTP API, and service layer.
 
-pub mod cli;
-pub mod tui;
 pub(crate) mod api;
+pub mod cli;
 pub(crate) mod config;
 pub(crate) mod db;
 pub(crate) mod deps;
@@ -13,6 +12,7 @@ pub(crate) mod events;
 pub(crate) mod hooks;
 pub(crate) mod process;
 pub(crate) mod services;
+pub mod tui;
 
 mod error;
 

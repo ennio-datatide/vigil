@@ -84,10 +84,10 @@ fn unix_ms() -> i64 {
 mod tests {
     use std::sync::Arc;
 
+    use axum::Router;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::routing::post;
-    use axum::Router;
     use http_body_util::BodyExt;
     use serde_json::json;
     use tempfile::TempDir;
@@ -210,13 +210,12 @@ mod tests {
         let (status, _) = post_event(app, body).await;
         assert_eq!(status, StatusCode::OK);
 
-        let row = sqlx::query_as::<_, (String,)>(
-            "SELECT event_type FROM events WHERE session_id = ?",
-        )
-        .bind("sess-789")
-        .fetch_one(db.pool())
-        .await
-        .expect("event row not found");
+        let row =
+            sqlx::query_as::<_, (String,)>("SELECT event_type FROM events WHERE session_id = ?")
+                .bind("sess-789")
+                .fetch_one(db.pool())
+                .await
+                .expect("event row not found");
 
         assert_eq!(row.0, "unknown");
     }

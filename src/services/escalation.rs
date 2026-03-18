@@ -60,9 +60,7 @@ impl EscalationService {
             tokio::time::sleep(timeout).await;
             #[cfg(test)]
             escalated.lock().await.push(sid.clone());
-            let _ = event_bus.emit(AppEvent::EscalationTriggered {
-                session_id: sid,
-            });
+            let _ = event_bus.emit(AppEvent::EscalationTriggered { session_id: sid });
         });
 
         self.timers

@@ -348,13 +348,10 @@ impl LictorMonitor {
     ];
 
     /// Detect if a hook event indicates a context overflow error.
-    fn detect_overflow(
-        event_type: &str,
-        payload: Option<&serde_json::Value>,
-    ) -> bool {
+    fn detect_overflow(event_type: &str, payload: Option<&serde_json::Value>) -> bool {
         // Only consider error/stop events.
-        let is_error_event = event_type.eq_ignore_ascii_case("error")
-            || event_type.eq_ignore_ascii_case("stop");
+        let is_error_event =
+            event_type.eq_ignore_ascii_case("error") || event_type.eq_ignore_ascii_case("stop");
         if !is_error_event {
             return false;
         }
@@ -574,14 +571,32 @@ mod tests {
         assert_eq!(CompactionLevel::from_usage(0.79), CompactionLevel::None);
         assert_eq!(CompactionLevel::from_usage(0.80), CompactionLevel::None);
 
-        assert_eq!(CompactionLevel::from_usage(0.801), CompactionLevel::Background);
-        assert_eq!(CompactionLevel::from_usage(0.85), CompactionLevel::Background);
+        assert_eq!(
+            CompactionLevel::from_usage(0.801),
+            CompactionLevel::Background
+        );
+        assert_eq!(
+            CompactionLevel::from_usage(0.85),
+            CompactionLevel::Background
+        );
 
-        assert_eq!(CompactionLevel::from_usage(0.851), CompactionLevel::Aggressive);
-        assert_eq!(CompactionLevel::from_usage(0.90), CompactionLevel::Aggressive);
-        assert_eq!(CompactionLevel::from_usage(0.95), CompactionLevel::Aggressive);
+        assert_eq!(
+            CompactionLevel::from_usage(0.851),
+            CompactionLevel::Aggressive
+        );
+        assert_eq!(
+            CompactionLevel::from_usage(0.90),
+            CompactionLevel::Aggressive
+        );
+        assert_eq!(
+            CompactionLevel::from_usage(0.95),
+            CompactionLevel::Aggressive
+        );
 
-        assert_eq!(CompactionLevel::from_usage(0.951), CompactionLevel::Emergency);
+        assert_eq!(
+            CompactionLevel::from_usage(0.951),
+            CompactionLevel::Emergency
+        );
         assert_eq!(CompactionLevel::from_usage(1.0), CompactionLevel::Emergency);
         assert_eq!(CompactionLevel::from_usage(1.5), CompactionLevel::Emergency);
     }

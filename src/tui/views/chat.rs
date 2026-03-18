@@ -66,8 +66,8 @@ fn render_messages(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     let total_lines = lines.len();
-    let paragraph = Paragraph::new(lines)
-        .scroll((total_lines.saturating_sub(area.height as usize) as u16, 0));
+    let paragraph =
+        Paragraph::new(lines).scroll((total_lines.saturating_sub(area.height as usize) as u16, 0));
     frame.render_widget(paragraph, area);
 }
 
@@ -80,11 +80,7 @@ fn render_input(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled("  › ", theme::user_message()),
         Span::styled(&app.chat_input, theme::text()),
         Span::styled("_", theme::text()), // cursor
-        Span::raw(
-            " ".repeat(
-                (area.width as usize).saturating_sub(app.chat_input.len() + 10),
-            ),
-        ),
+        Span::raw(" ".repeat((area.width as usize).saturating_sub(app.chat_input.len() + 10))),
         Span::styled("Esc Back", theme::muted()),
     ]);
     frame.render_widget(input, input_area);

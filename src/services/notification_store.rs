@@ -150,12 +150,11 @@ impl NotificationStore {
     pub(crate) async fn mark_all_read(&self) -> Result<u64> {
         let now_ms = unix_ms();
 
-        let result =
-            sqlx::query("UPDATE notifications SET read_at = ? WHERE read_at IS NULL")
-                .bind(now_ms)
-                .execute(self.db.pool())
-                .await
-                .map_err(DbError::from)?;
+        let result = sqlx::query("UPDATE notifications SET read_at = ? WHERE read_at IS NULL")
+            .bind(now_ms)
+            .execute(self.db.pool())
+            .await
+            .map_err(DbError::from)?;
 
         Ok(result.rows_affected())
     }
@@ -248,7 +247,11 @@ mod tests {
 
         // Create two notifications.
         let n1 = store
-            .create("session-1", NotificationType::SessionDone, "Session completed")
+            .create(
+                "session-1",
+                NotificationType::SessionDone,
+                "Session completed",
+            )
             .await
             .unwrap();
         assert_eq!(n1.session_id, "session-1");

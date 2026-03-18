@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 
 /// In-memory output buffer for a single session.
 struct OutputBuffer {
@@ -77,10 +77,7 @@ impl OutputManager {
     }
 
     /// Subscribe to live output updates for a session.
-    pub(crate) async fn subscribe(
-        &self,
-        session_id: &str,
-    ) -> Option<broadcast::Receiver<Vec<u8>>> {
+    pub(crate) async fn subscribe(&self, session_id: &str) -> Option<broadcast::Receiver<Vec<u8>>> {
         self.buffers
             .read()
             .await

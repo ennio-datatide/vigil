@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     use crate::db::models::{AgentType, Session, SessionStatus};
     use crate::tui::state::{App, ChatMessage, ChatSender};
@@ -175,12 +175,8 @@ mod tests {
                 ))
                 .style(crate::tui::theme::status_blocked())
                 .alignment(ratatui::layout::Alignment::Center);
-                let popup_area = ratatui::layout::Rect::new(
-                    area.width / 4,
-                    area.height / 2,
-                    area.width / 2,
-                    1,
-                );
+                let popup_area =
+                    ratatui::layout::Rect::new(area.width / 4, area.height / 2, area.width / 2, 1);
                 frame.render_widget(popup, popup_area);
             }
         });

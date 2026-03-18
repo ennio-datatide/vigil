@@ -112,7 +112,11 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::metadata(&emit_path).unwrap().permissions();
-            assert_ne!(perms.mode() & 0o111, 0, "emit-event.sh should be executable");
+            assert_ne!(
+                perms.mode() & 0o111,
+                0,
+                "emit-event.sh should be executable"
+            );
         }
 
         // settings.json should exist and contain the hooks dir path.

@@ -61,10 +61,17 @@ impl KvStore {
     ///
     /// Returns [`KvError::Write`] on transaction or table errors.
     pub(crate) fn set(&self, key: &str, value: &str) -> Result<()> {
-        let txn = self.db.begin_write().map_err(|e| KvError::Write(e.into()))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| KvError::Write(e.into()))?;
         {
-            let mut table = txn.open_table(KV_TABLE).map_err(|e| KvError::Write(e.into()))?;
-            table.insert(key, value).map_err(|e| KvError::Write(e.into()))?;
+            let mut table = txn
+                .open_table(KV_TABLE)
+                .map_err(|e| KvError::Write(e.into()))?;
+            table
+                .insert(key, value)
+                .map_err(|e| KvError::Write(e.into()))?;
         }
         txn.commit().map_err(|e| KvError::Write(e.into()))?;
         Ok(())
@@ -76,7 +83,10 @@ impl KvStore {
     ///
     /// Returns [`KvError::Write`] on transaction or table errors.
     pub(crate) fn delete(&self, key: &str) -> Result<()> {
-        let txn = self.db.begin_write().map_err(|e| KvError::Write(e.into()))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| KvError::Write(e.into()))?;
         {
             let table = txn.open_table(KV_TABLE);
             match table {

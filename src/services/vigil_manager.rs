@@ -5,11 +5,11 @@
 //! PTY and responses are detected via `Stop` hook events.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::config::Config;
 use crate::db::sqlite::SqliteDb;
@@ -102,8 +102,7 @@ impl VigilManager {
         }
 
         // Wait for Stop hook event with 600s timeout.
-        let result =
-            tokio::time::timeout(std::time::Duration::from_secs(600), rx).await;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(600), rx).await;
 
         self.busy.store(false, Ordering::Release);
 
@@ -163,8 +162,9 @@ impl VigilManager {
 
         // Install Skills — copy from bundled skills/ directory into the
         // vigil session's .claude/skills/.
-        let skills_src =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills").join("vigil");
+        let skills_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("skills")
+            .join("vigil");
         let skills_dst = self.vigil_dir.join(".claude").join("skills");
         std::fs::create_dir_all(&skills_dst)
             .map_err(|e| anyhow::anyhow!("failed to create skills dir: {e}"))?;
@@ -256,10 +256,7 @@ impl VigilManager {
                     // containing Claude's response text.
                     let response = payload
                         .as_ref()
-                        .and_then(|p| {
-                            p.get("last_assistant_message")
-                                .and_then(|r| r.as_str())
-                        })
+                        .and_then(|p| p.get("last_assistant_message").and_then(|r| r.as_str()))
                         .unwrap_or("")
                         .to_string();
 
@@ -306,7 +303,9 @@ impl VigilManager {
                 // Persist system message.
                 let chat_store =
                     crate::services::vigil_chat::VigilChatStore::new(Arc::clone(&this.db));
-                let _ = chat_store.save_message("system", "Vigil restarted", None).await;
+                let _ = chat_store
+                    .save_message("system", "Vigil restarted", None)
+                    .await;
             }
         });
     }
@@ -315,16 +314,14 @@ impl VigilManager {
     async fn inject_context(&self) {
         use std::fmt::Write as _;
 
-        let chat_store =
-            crate::services::vigil_chat::VigilChatStore::new(Arc::clone(&self.db));
+        let chat_store = crate::services::vigil_chat::VigilChatStore::new(Arc::clone(&self.db));
         if let Ok(messages) = chat_store.list_messages(10, 0).await {
             if messages.is_empty() {
                 return;
             }
 
-            let mut context = String::from(
-                "You are resuming after a restart. Recent conversation:\n\n",
-            );
+            let mut context =
+                String::from("You are resuming after a restart. Recent conversation:\n\n");
             for msg in messages.iter().rev() {
                 let role = if msg.role == "user" { "User" } else { "You" };
                 let _ = write!(context, "{role}: {}\n\n", msg.content);
@@ -341,23 +338,20 @@ impl VigilManager {
     async fn wait_for_ready(&self) {
         let mut rx = self.event_bus.subscribe();
         let sid = self.session_id.clone();
-        let timeout = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            async move {
-                while let Ok(event) = rx.recv().await {
-                    if let AppEvent::HookEvent {
-                        session_id,
-                        event_type,
-                        ..
-                    } = &event
-                        && session_id == &sid
-                        && event_type == "Stop"
-                    {
-                        return;
-                    }
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(30), async move {
+            while let Ok(event) = rx.recv().await {
+                if let AppEvent::HookEvent {
+                    session_id,
+                    event_type,
+                    ..
+                } = &event
+                    && session_id == &sid
+                    && event_type == "Stop"
+                {
+                    return;
                 }
-            },
-        );
+            }
+        });
         if timeout.await.is_err() {
             tracing::warn!("Vigil readiness timeout (30s) — proceeding anyway");
         }
@@ -381,10 +375,7 @@ type PtySpawnResult = (
 /// Unlike the regular `spawn_claude_pty()` in `agent_spawner.rs`, this runs
 /// in interactive mode (no `-p`) with `--dangerously-skip-permissions` and
 /// `--verbose`. Skills are installed in `.claude/skills/` beforehand.
-fn spawn_vigil_pty(
-    work_dir: &Path,
-    server_port: u16,
-) -> anyhow::Result<PtySpawnResult> {
+fn spawn_vigil_pty(work_dir: &Path, server_port: u16) -> anyhow::Result<PtySpawnResult> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -488,15 +479,13 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> anyhow::Result<()> {
     for entry in std::fs::read_dir(src)
         .map_err(|e| anyhow::anyhow!("failed to read dir {}: {e}", src.display()))?
     {
-        let entry =
-            entry.map_err(|e| anyhow::anyhow!("failed to read dir entry: {e}"))?;
+        let entry = entry.map_err(|e| anyhow::anyhow!("failed to read dir entry: {e}"))?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
 
         if src_path.is_dir() {
-            std::fs::create_dir_all(&dst_path).map_err(|e| {
-                anyhow::anyhow!("failed to create dir {}: {e}", dst_path.display())
-            })?;
+            std::fs::create_dir_all(&dst_path)
+                .map_err(|e| anyhow::anyhow!("failed to create dir {}: {e}", dst_path.display()))?;
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path).map_err(|e| {

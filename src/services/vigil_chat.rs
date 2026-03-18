@@ -86,11 +86,7 @@ impl VigilChatStore {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub(crate) async fn list_messages(
-        &self,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<VigilMessage>> {
+    pub(crate) async fn list_messages(&self, limit: i64, offset: i64) -> Result<Vec<VigilMessage>> {
         let rows = sqlx::query(
             "SELECT id, role, content, embedded_cards, created_at \
              FROM vigil_messages ORDER BY id ASC LIMIT ? OFFSET ?",

@@ -33,10 +33,7 @@ pub enum AppEvent {
     SessionSpawned { session: Session },
 
     /// Spawning a session failed.
-    SessionSpawnFailed {
-        session_id: String,
-        reason: String,
-    },
+    SessionSpawnFailed { session_id: String, reason: String },
 
     /// A session was removed.
     SessionRemoved { session_id: String },
@@ -45,10 +42,7 @@ pub enum AppEvent {
     NotificationCreated { notification_id: i64 },
 
     /// A child session was spawned from a parent.
-    ChildSpawned {
-        parent_id: String,
-        child_id: String,
-    },
+    ChildSpawned { parent_id: String, child_id: String },
 
     /// A child session completed.
     ChildCompleted {

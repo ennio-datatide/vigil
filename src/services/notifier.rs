@@ -9,13 +9,13 @@ use std::sync::Arc;
 
 use reqwest::Client;
 
-use crate::services::settings_store::TelegramConfig;
 use crate::db::models::SessionStatus;
 use crate::db::sqlite::SqliteDb;
 use crate::deps::AppDeps;
 use crate::events::{AppEvent, EventBus};
 use crate::services::session_store::SessionStore;
 use crate::services::settings_store::SettingsStore;
+use crate::services::settings_store::TelegramConfig;
 
 /// Sends Telegram notifications on session status changes.
 #[allow(dead_code)] // Will be instantiated in Task 1.16 (wiring).
@@ -209,7 +209,7 @@ pub(crate) fn status_to_event_name(status: &SessionStatus) -> Option<&'static st
 /// Emoji prefix for a given session status.
 pub(crate) fn status_emoji(status: &SessionStatus) -> &'static str {
     match status {
-        SessionStatus::Completed => "\u{2705}",    // check mark
+        SessionStatus::Completed => "\u{2705}",     // check mark
         SessionStatus::Failed => "\u{274c}",        // cross mark
         SessionStatus::NeedsInput => "\u{23f3}",    // hourglass
         SessionStatus::AuthRequired => "\u{1f510}", // locked with key
@@ -232,10 +232,7 @@ mod tests {
             status_to_event_name(&SessionStatus::Completed),
             Some("session_done")
         );
-        assert_eq!(
-            status_to_event_name(&SessionStatus::Failed),
-            Some("error")
-        );
+        assert_eq!(status_to_event_name(&SessionStatus::Failed), Some("error"));
         assert_eq!(
             status_to_event_name(&SessionStatus::NeedsInput),
             Some("needs_input")
@@ -290,7 +287,10 @@ mod tests {
         ];
         for status in &statuses {
             let emoji = status_emoji(status);
-            assert!(!emoji.is_empty(), "emoji for {status:?} should not be empty");
+            assert!(
+                !emoji.is_empty(),
+                "emoji for {status:?} should not be empty"
+            );
         }
     }
 }

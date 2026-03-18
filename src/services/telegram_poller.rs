@@ -6,9 +6,9 @@
 
 use reqwest::Client;
 
-use crate::services::settings_store::TelegramConfig;
 use crate::deps::AppDeps;
 use crate::services::settings_store::SettingsStore;
+use crate::services::settings_store::TelegramConfig;
 
 /// Polls Telegram for incoming messages and routes them through Vigil.
 pub(crate) struct TelegramPoller {
@@ -93,8 +93,9 @@ impl TelegramPoller {
         // Route through the Vigil chat pipeline.
         match crate::api::vigil::process_chat(&self.deps, text, None).await {
             Ok(result) => {
-                if let Err(e) =
-                    self.send_message(&config.bot_token, &config.chat_id, &result.response).await
+                if let Err(e) = self
+                    .send_message(&config.bot_token, &config.chat_id, &result.response)
+                    .await
                 {
                     tracing::error!(error = %e, "failed to send telegram response");
                 }
@@ -154,12 +155,7 @@ impl TelegramPoller {
     }
 
     /// Send a text message via the Telegram Bot API.
-    async fn send_message(
-        &self,
-        bot_token: &str,
-        chat_id: &str,
-        text: &str,
-    ) -> anyhow::Result<()> {
+    async fn send_message(&self, bot_token: &str, chat_id: &str, text: &str) -> anyhow::Result<()> {
         let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
 
         // Telegram has a 4096 char limit per message. Split if needed.
@@ -234,9 +230,7 @@ fn split_message(text: &str, max_len: usize) -> Vec<&str> {
             break;
         }
         // Try to split at a newline boundary.
-        let split_at = remaining[..max_len]
-            .rfind('\n')
-            .unwrap_or(max_len);
+        let split_at = remaining[..max_len].rfind('\n').unwrap_or(max_len);
         chunks.push(&remaining[..split_at]);
         remaining = remaining[split_at..].trim_start_matches('\n');
     }

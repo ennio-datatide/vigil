@@ -84,8 +84,7 @@ pub async fn cmd_up(port: u16) -> anyhow::Result<()> {
 
     match output {
         Ok(o) if o.status.success() => {
-            let json: serde_json::Value =
-                serde_json::from_slice(&o.stdout).unwrap_or_default();
+            let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
 
             let logged_in = json["loggedIn"].as_bool().unwrap_or(false);
             let sub_type = json["subscriptionType"].as_str().unwrap_or("unknown");
@@ -461,7 +460,10 @@ pub async fn cmd_ls(all: bool) -> anyhow::Result<()> {
                 let prompt = s["prompt"].as_str().unwrap_or("?");
 
                 let trunc_project = if project_path.len() > project_w {
-                    format!("...{}", &project_path[project_path.len() - (project_w - 3)..])
+                    format!(
+                        "...{}",
+                        &project_path[project_path.len() - (project_w - 3)..]
+                    )
                 } else {
                     project_path.to_string()
                 };
@@ -508,7 +510,10 @@ pub async fn cmd_status() -> anyhow::Result<()> {
             println!("Server: {status} (port 8000)");
 
             // Fetch session counts.
-            if let Ok(sr) = client.get(format!("{DEFAULT_URL}/api/sessions")).send().await
+            if let Ok(sr) = client
+                .get(format!("{DEFAULT_URL}/api/sessions"))
+                .send()
+                .await
                 && sr.status().is_success()
             {
                 let sessions: Vec<serde_json::Value> = sr.json().await?;

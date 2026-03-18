@@ -4,8 +4,8 @@ pub(crate) mod events;
 pub mod health;
 pub(crate) mod vigil;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::deps::AppDeps;
 

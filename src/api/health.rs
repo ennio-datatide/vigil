@@ -1,8 +1,8 @@
 //! Health check and `OpenAPI` spec endpoints.
 
-use axum::response::IntoResponse;
 use axum::Json;
-use serde_json::{json, Value};
+use axum::response::IntoResponse;
+use serde_json::{Value, json};
 
 /// `GET /health` — returns `{"status": "ok"}`.
 pub async fn health() -> Json<Value> {

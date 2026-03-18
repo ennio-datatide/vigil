@@ -65,13 +65,12 @@ impl ProjectStore {
         .map_err(DbError::from)?;
 
         // Return the freshly inserted/replaced row.
-        let row = sqlx::query(
-            "SELECT path, name, skills_dir, last_used_at FROM projects WHERE path = ?",
-        )
-        .bind(path)
-        .fetch_one(self.db.pool())
-        .await
-        .map_err(DbError::from)?;
+        let row =
+            sqlx::query("SELECT path, name, skills_dir, last_used_at FROM projects WHERE path = ?")
+                .bind(path)
+                .fetch_one(self.db.pool())
+                .await
+                .map_err(DbError::from)?;
 
         Ok(row_to_project(&row))
     }

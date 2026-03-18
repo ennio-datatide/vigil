@@ -68,7 +68,9 @@ impl MemoryStore {
     pub(crate) async fn create(&self, input: &CreateMemoryInput) -> Result<Memory> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
-        let importance = input.importance.unwrap_or_else(|| default_importance(&input.memory_type));
+        let importance = input
+            .importance
+            .unwrap_or_else(|| default_importance(&input.memory_type));
         let memory_type_str = memory_type_to_str(&input.memory_type);
 
         // Generate embedding first — most likely failure point, fail fast

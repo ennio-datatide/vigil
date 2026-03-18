@@ -14,7 +14,7 @@ use crate::db::models::{Session, SessionStatus, SpawnType};
 use crate::db::sqlite::SqliteDb;
 use crate::error::{DbError, Result};
 use crate::events::{AppEvent, EventBus};
-use crate::services::session_store::{row_to_session, CreateSessionInput, SessionStore};
+use crate::services::session_store::{CreateSessionInput, SessionStore, row_to_session};
 
 /// Maximum number of concurrent branch children per parent session.
 const MAX_BRANCHES: usize = 3;
@@ -71,11 +71,7 @@ impl SubSessionService {
     /// # Errors
     ///
     /// Returns an error if validation fails or the database operation fails.
-    pub(crate) async fn spawn(
-        &self,
-        parent_id: &str,
-        input: &SpawnInput,
-    ) -> Result<Session> {
+    pub(crate) async fn spawn(&self, parent_id: &str, input: &SpawnInput) -> Result<Session> {
         let store = SessionStore::new(Arc::clone(&self.db));
 
         // 1. Validate parent exists and is running.
@@ -92,7 +88,9 @@ impl SubSessionService {
         }
 
         // 2. Check per-type limit.
-        let active_count = self.count_active_children(parent_id, &input.spawn_type).await?;
+        let active_count = self
+            .count_active_children(parent_id, &input.spawn_type)
+            .await?;
         let limit = match input.spawn_type {
             SpawnType::Branch => MAX_BRANCHES,
             SpawnType::Worker => MAX_WORKERS,
@@ -243,7 +241,6 @@ fn spawn_type_label(t: &SpawnType) -> &'static str {
         SpawnType::Worker => "worker",
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests

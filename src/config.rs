@@ -117,7 +117,13 @@ impl Config {
     ///
     /// Returns an error if directory creation fails.
     pub fn ensure_dirs(&self) -> Result<()> {
-        for dir in [&self.vigil_home, &self.logs_dir, &self.skills_dir, &self.worktree_base, &self.lance_dir] {
+        for dir in [
+            &self.vigil_home,
+            &self.logs_dir,
+            &self.skills_dir,
+            &self.worktree_base,
+            &self.lance_dir,
+        ] {
             std::fs::create_dir_all(dir).map_err(ConfigError::CreateDir)?;
         }
         Ok(())

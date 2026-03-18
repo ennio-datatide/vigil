@@ -33,7 +33,10 @@ async fn output_extraction_large_data() {
     // -- ANSI-only content.
     let ansi_only = b"\x1b[31m\x1b[0m\x1b[32m\x1b[0m";
     let result = strip_ansi(ansi_only);
-    assert!(result.trim().is_empty(), "ANSI-only content should be empty after stripping");
+    assert!(
+        result.trim().is_empty(),
+        "ANSI-only content should be empty after stripping"
+    );
 
     // -- Context chain with truncation.
     let labels: Vec<String> = vec!["A", "B", "C", "D", "E"]
@@ -46,8 +49,14 @@ async fn output_extraction_large_data() {
         .map(|s| s.clone())
         .collect();
     let chain = build_context_chain("user prompt", &labels, &outputs, "current step");
-    assert!(chain.contains("<user_request>"), "should contain user request tag");
-    assert!(chain.contains("<current_step>"), "should contain current step tag");
+    assert!(
+        chain.contains("<user_request>"),
+        "should contain user request tag"
+    );
+    assert!(
+        chain.contains("<current_step>"),
+        "should contain current step tag"
+    );
     // Oldest steps should have been truncated; most recent step (E) must be present.
     assert!(
         chain.contains("Step 5: E"),

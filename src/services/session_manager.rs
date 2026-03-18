@@ -143,7 +143,9 @@ impl SessionManager {
             .map(std::string::ToString::to_string)
             .unwrap_or_default();
 
-        if payload_str.contains("\"auth_required\"") || payload_str.contains("\"permission_required\"") {
+        if payload_str.contains("\"auth_required\"")
+            || payload_str.contains("\"permission_required\"")
+        {
             let store = SessionStore::new(self.db.clone());
             let session = store
                 .update_status(session_id, SessionStatus::AuthRequired, None, None)
@@ -203,11 +205,7 @@ impl SessionManager {
     /// When a session with a `parent_id` reaches a terminal status, emits a
     /// [`AppEvent::ChildCompleted`] event and creates a notification for the
     /// parent session.
-    async fn handle_child_completion(
-        &self,
-        session_id: &str,
-        success: bool,
-    ) -> anyhow::Result<()> {
+    async fn handle_child_completion(&self, session_id: &str, success: bool) -> anyhow::Result<()> {
         let store = SessionStore::new(self.db.clone());
         let Some(session) = store.get(session_id).await? else {
             tracing::debug!(session_id, "session not found for child completion check");
@@ -238,7 +236,6 @@ impl SessionManager {
 
         Ok(())
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -260,8 +257,7 @@ mod tests {
         event_bus: &Arc<EventBus>,
         dir: &TempDir,
     ) -> (SessionManager, EscalationService) {
-        let escalation =
-            EscalationService::new(Arc::clone(event_bus), Duration::from_millis(100));
+        let escalation = EscalationService::new(Arc::clone(event_bus), Duration::from_millis(100));
         let manager = SessionManager {
             db: db.clone(),
             event_bus: event_bus.clone(),
@@ -315,10 +311,7 @@ mod tests {
         let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         let payload = serde_json::json!({ "reason": "auth_required" });
-        manager
-            .handle_stop("sess-1", Some(&payload))
-            .await
-            .unwrap();
+        manager.handle_stop("sess-1", Some(&payload)).await.unwrap();
 
         // Verify session status was updated.
         let session = session_store.get("sess-1").await.unwrap().unwrap();
@@ -356,10 +349,7 @@ mod tests {
 
         // Normal stop (no auth_required in payload).
         let payload = serde_json::json!({ "reason": "completed" });
-        manager
-            .handle_stop("sess-1", Some(&payload))
-            .await
-            .unwrap();
+        manager.handle_stop("sess-1", Some(&payload)).await.unwrap();
 
         // Session should still be queued (unchanged).
         let session = session_store.get("sess-1").await.unwrap().unwrap();
@@ -414,10 +404,7 @@ mod tests {
         let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
         // No message in payload -- should use default.
-        manager
-            .handle_notification("sess-1", None)
-            .await
-            .unwrap();
+        manager.handle_notification("sess-1", None).await.unwrap();
 
         let notif_store = NotificationStore::new(db.clone());
         let notifications = notif_store.list(false).await.unwrap();
@@ -443,10 +430,7 @@ mod tests {
             parent_id: Some("parent-1".to_string()),
             ..sample_session_input()
         };
-        session_store
-            .create("child-1", &child_input)
-            .await
-            .unwrap();
+        session_store.create("child-1", &child_input).await.unwrap();
 
         let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
@@ -531,10 +515,7 @@ mod tests {
             parent_id: Some("parent-1".to_string()),
             ..sample_session_input()
         };
-        session_store
-            .create("child-1", &child_input)
-            .await
-            .unwrap();
+        session_store.create("child-1", &child_input).await.unwrap();
 
         let (manager, _escalation) = test_manager(&db, &event_bus, &_dir);
 
@@ -570,8 +551,7 @@ mod tests {
     async fn needs_input_starts_escalation_timer() {
         let (db, _dir) = test_db().await;
         let event_bus = Arc::new(EventBus::new(64));
-        let escalation =
-            EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(50));
+        let escalation = EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(50));
         let manager = SessionManager {
             db: db.clone(),
             event_bus: event_bus.clone(),
@@ -606,8 +586,7 @@ mod tests {
     async fn resume_cancels_escalation_timer() {
         let (db, _dir) = test_db().await;
         let event_bus = Arc::new(EventBus::new(64));
-        let escalation =
-            EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(200));
+        let escalation = EscalationService::new(Arc::clone(&event_bus), Duration::from_millis(200));
         let manager = SessionManager {
             db: db.clone(),
             event_bus: event_bus.clone(),
