@@ -251,6 +251,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::db::sqlite::SqliteDb;
+    use crate::services::session_store::CreateSessionInput;
     use tempfile::TempDir;
 
     /// Create a test `SessionManager` with a short escalation timeout.
