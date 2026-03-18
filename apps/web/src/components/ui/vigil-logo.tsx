@@ -1,6 +1,6 @@
 'use client';
 
-interface PraefectusLogoProps {
+interface VigilLogoProps {
   collapsed?: boolean;
   size?: number;
   className?: string;
@@ -50,17 +50,11 @@ function LogoMark({ size = 24, className }: { size?: number; className?: string 
   );
 }
 
-export function PraefectusLogo({
-  collapsed = false,
-  size = 24,
-  className = '',
-}: PraefectusLogoProps) {
+export function VigilLogo({ collapsed = false, size = 24, className = '' }: VigilLogoProps) {
   return (
     <div className={`flex items-center gap-2 text-accent ${className}`}>
       <LogoMark size={size} />
-      {!collapsed && (
-        <span className="text-lg font-semibold tracking-tight text-text">Praefectus</span>
-      )}
+      {!collapsed && <span className="text-lg font-semibold tracking-tight text-text">Vigil</span>}
     </div>
   );
 }

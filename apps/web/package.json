@@ -1,5 +1,5 @@
 {
-  "name": "@praefectus/web",
+  "name": "@vigil/web",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
@@ -8,7 +8,7 @@
     "lint": "biome lint ./src"
   },
   "dependencies": {
-    "@praefectus/shared": "*",
+    "@vigil/shared": "*",
     "@tanstack/react-query": "^5",
     "@tanstack/react-virtual": "^3.13.22",
     "@xterm/addon-attach": "^0.12",

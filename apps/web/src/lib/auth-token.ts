@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'praefectus-api-token';
+const STORAGE_KEY = 'vigil-api-token';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
