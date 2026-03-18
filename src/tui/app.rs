@@ -16,6 +16,7 @@ use crate::db::models::{Session, SessionStatus};
 use crate::process::output_manager::OutputManager;
 use crate::tui::state::{App, ChatMessage, ChatSender, Message, View};
 use crate::tui::views;
+use crate::tui::widgets;
 
 /// Run the TUI event loop until the user quits or the cancellation token fires.
 pub async fn run(
@@ -347,6 +348,10 @@ fn view(app: &App, frame: &mut Frame) {
         View::Chat => views::chat::render(app, frame, area),
         View::Terminal => views::terminal::render(app, frame, area),
         View::Setup => views::setup::render(app, frame, area),
+    }
+
+    if app.show_help {
+        widgets::help_overlay::render(frame, area);
     }
 
     if app.confirm_quit {
