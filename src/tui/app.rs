@@ -11,11 +11,16 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use ratatui::{DefaultTerminal, Frame};
 use tokio_util::sync::CancellationToken;
 
+use crate::db::models::Session;
 use crate::tui::state::{App, Message, View};
 use crate::tui::views;
 
 /// Run the TUI event loop until the user quits or the cancellation token fires.
-pub async fn run(mut terminal: DefaultTerminal, cancel: CancellationToken) -> Result<()> {
+pub async fn run(
+    mut terminal: DefaultTerminal,
+    cancel: CancellationToken,
+    mut session_rx: tokio::sync::watch::Receiver<Vec<Session>>,
+) -> Result<()> {
     let mut app = App::new();
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(33));
@@ -29,6 +34,10 @@ pub async fn run(mut terminal: DefaultTerminal, cancel: CancellationToken) -> Re
             }
             _ = tick.tick() => {
                 terminal.draw(|frame| view(&app, frame))?;
+            }
+            Ok(()) = session_rx.changed() => {
+                let sessions = session_rx.borrow_and_update().clone();
+                update(&mut app, Message::SessionsUpdated(sessions));
             }
             _ = cancel.cancelled() => {
                 app.should_quit = true;

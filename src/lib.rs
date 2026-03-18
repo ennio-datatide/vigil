@@ -110,9 +110,30 @@ pub async fn run_tui(port: u16) -> color_eyre::Result<()> {
         }
     });
 
+    // Create a watch channel for session state.
+    let (session_tx, session_rx) = tokio::sync::watch::channel(Vec::new());
+
+    // Spawn a task that polls SessionStore and pushes updates.
+    let session_db = Arc::clone(&deps.db);
+    let session_cancel = cancel.clone();
+    tokio::spawn(async move {
+        let store = crate::services::session_store::SessionStore::new(session_db);
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Ok(sessions) = store.list().await {
+                        let _ = session_tx.send(sessions);
+                    }
+                }
+                _ = session_cancel.cancelled() => break,
+            }
+        }
+    });
+
     // Run the TUI as the main task.
     let terminal = ratatui::init();
-    let result = tui::app::run(terminal, cancel).await;
+    let result = tui::app::run(terminal, cancel, session_rx).await;
     ratatui::restore();
 
     // Clean up background tasks.
