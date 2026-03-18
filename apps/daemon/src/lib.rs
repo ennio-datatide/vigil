@@ -4,6 +4,7 @@
 //! HTTP API, and service layer.
 
 pub mod cli;
+pub mod tui;
 pub(crate) mod api;
 pub(crate) mod config;
 pub(crate) mod db;
